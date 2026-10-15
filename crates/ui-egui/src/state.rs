@@ -416,6 +416,10 @@ pub struct Panels {
     /// floating window rather than a modal so the canvas stays usable while a gradient is edited.
     #[serde(default)]
     pub gradient_editor: bool,
+    /// Window › Post Studio: the K2 Press post builder, docked left of the canvas. Off by default
+    /// for embedders and tests; the K2 Press Desktop app turns it on at launch.
+    #[serde(default)]
+    pub post_studio: bool,
 }
 
 impl Default for Panels {
@@ -438,6 +442,7 @@ impl Default for Panels {
             rail: true,
             menu_bar: true,
             gradient_editor: false,
+            post_studio: false,
         }
     }
 }

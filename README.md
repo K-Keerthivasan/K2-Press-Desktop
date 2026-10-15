@@ -1,3 +1,20 @@
+# K2 Press Desktop
+
+**A desktop content studio for Instagram and Facebook, built on [PhotoCraft](https://github.com/storytold/photocraft).**
+
+This is an independent fork of PhotoCraft, the open-source, pure-Rust image editor by the ArtCraft
+team and the PhotoCraft contributors. Everything PhotoCraft does is here. On top of it, **Post
+Studio** (Window › Post Studio) brings in K2 Press: AI-written carousels and single posts from an
+idea, RSS stories or a spreadsheet, built as fully editable PhotoCraft documents, then exported to
+the review queue, scheduled on a calendar and published to Instagram and Facebook. It shares the
+K2 Press library folder in place. See [docs/POST-STUDIO.md](docs/POST-STUDIO.md).
+
+```powershell
+cargo run --release -p photocraft
+```
+
+---
+
 <p align="center">
   <a href="https://getartcraft.com/">
     <picture>

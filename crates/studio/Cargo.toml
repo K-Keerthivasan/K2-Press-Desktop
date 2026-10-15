@@ -1,0 +1,27 @@
+[package]
+name = "photocraft-studio"
+description = "Post Studio services: the K2 Press library (config, brands, review queue, calendar), local AI planning, RSS stories, stock images and Instagram / Facebook publishing"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+photocraft-press = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+log = { workspace = true }
+
+# Everything that touches the file system, the network or the clock is desktop-only; the web build
+# gets the data types and "unsupported" errors.
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+# K2 Press's config.yaml, read in place.
+serde_yaml = "0.9"
+# RSS / Atom feeds.
+roxmltree = "0.20"
+# Local time for the calendar and the scheduler.
+chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
+# HTTPS for the Graph API, Pexels / Unsplash and a local Ollama; rustls, no system OpenSSL.
+ureq = { version = "2", default-features = false, features = ["tls", "json"] }

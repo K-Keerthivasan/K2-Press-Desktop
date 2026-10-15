@@ -1,0 +1,13 @@
+[package]
+name = "photocraft-press"
+description = "Post Studio data: brands, post plans, CSV import and the post layouts as engine command steps"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }

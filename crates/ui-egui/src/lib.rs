@@ -15,6 +15,8 @@ macro_rules! tl {
 }
 
 pub mod actions;
+#[cfg(not(target_arch = "wasm32"))]
+pub mod press_ui;
 pub mod adjust_dialog;
 pub mod adjust_editors;
 pub mod adjust_preview;
@@ -533,6 +535,9 @@ type InfoSampleKey = (i32, i32, u64, u32);
 
 pub struct PhotocraftApp {
     pub session: Session,
+    /// Window › Post Studio (`press_ui`).
+    #[cfg(not(target_arch = "wasm32"))]
+    pub(crate) press: Box<press_ui::State>,
     pub ui: UiState,
     pub services: Services,
     /// Canvas caches per (document, display): CPU textures hold monitor values; the GPU
@@ -810,6 +815,8 @@ impl PhotocraftApp {
     pub fn new(session: Session, services: Services) -> Self {
         let mut app = Self {
             session,
+            #[cfg(not(target_arch = "wasm32"))]
+            press: Box::default(),
             ui: UiState::default(),
             services,
             canvases: HashMap::new(),
@@ -1943,6 +1950,10 @@ impl eframe::App for PhotocraftApp {
         }
         if chrome && self.ui.panels.dock {
             panels::right_dock(self, ui);
+        }
+        #[cfg(not(target_arch = "wasm32"))]
+        if chrome && self.ui.panels.post_studio {
+            press_ui::panel(self, ui);
         }
         let t = theme::Tokens::get(&ctx);
         let backdrop = if chrome { prefs_ui::pasteboard_color(self).unwrap_or(t.canvas) } else { egui::Color32::BLACK };

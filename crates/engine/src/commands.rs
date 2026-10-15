@@ -1386,6 +1386,7 @@ fn build() -> Vec<CommandSpec> {
     v.extend(crate::distort_cmds::specs());
     v.extend(crate::analysis_cmds::specs());
     v.extend(crate::notes_cmds::specs());
+    v.extend(crate::press_cmds::specs());
     v.extend(crate::history_cmds::specs());
     v.extend(crate::history_select_cmds::specs());
     v.extend(crate::proof_sim::specs());

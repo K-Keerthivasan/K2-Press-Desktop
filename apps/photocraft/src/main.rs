@@ -394,6 +394,8 @@ fn main() -> eframe::Result {
             let mut app = PhotocraftApp::new(Session::new(), services);
             app.integrated_titlebar = cfg!(target_os = "macos");
             app.custom_titlebar = custom_titlebar;
+            // K2 Press Desktop opens with Post Studio beside the canvas (Window › Post Studio hides it).
+            app.ui.panels.post_studio = true;
             // Only the title bar's free gap drags the window, never the menus (mac_window.rs).
             #[cfg(target_os = "macos")]
             mac_window::disable_native_title_drag();

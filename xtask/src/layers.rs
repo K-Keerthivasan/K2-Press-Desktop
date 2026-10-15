@@ -46,6 +46,8 @@ pub const TABLE: &[(&str, Class)] = &[
     ("adobe-assets", Class::Standalone),
     // Pen tablet input (the one isolated `unsafe` helper: AppKit interop on macOS).
     ("tablet", Class::Standalone),
+    // Post Studio data: brands, plans, post layouts as command steps (pure; no workspace deps).
+    ("press", Class::Standalone),
     ("doc", Class::Layer(1)),
     ("ops", Class::Layer(2)),
     ("paint", Class::Layer(2)),
@@ -60,6 +62,8 @@ pub const TABLE: &[(&str, Class)] = &[
     ("viewport", Class::Layer(4)),
     ("ml", Class::Layer(4)),
     ("plugins", Class::Layer(4)),
+    // Post Studio services: the K2 Press library, AI, feeds and Meta publishing (native-only I/O).
+    ("studio", Class::Layer(4)),
     ("engine", Class::Layer(5)),
     ("ui-egui", Class::Layer(6)),
     ("automation", Class::Layer(6)),
