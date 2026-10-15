@@ -49,7 +49,35 @@ from the brand block in `config.yaml`.
 | **Calendar** | Month grid of scheduled and published posts; fill free slots with approved posts |
 | **Settings** | K2 Press folder, AI backend and model, image source, scheduler, Meta connection test |
 
-## Publishing
+## Cloud scheduling and posting (Supabase)
+
+Post Studio uses the same Supabase backend as Shorts Factory Desktop (`publishing-api` edge
+function, Backblaze B2 or Supabase Storage). In the Queue:
+
+- **Schedule in cloud**: uploads the slides and schedules the post at the typed time. It
+  publishes even while this PC is off.
+- **Post now**: uploads and asks the cloud to publish right away. Instagram fetches the images
+  from short-lived signed storage URLs, so no `PUBLIC_BASE_URL` or running web app is needed.
+- **Sync cloud** pulls results back (published + permalink, failed + reason, cancelled).
+- Cloud posts can be cancelled or moved to now until publishing starts.
+
+Slides are converted to JPEG (Instagram's content publishing takes JPEG only, at most 8 MB) into
+`outputs/<rel>/cloud/`. Single images, stories and carousels (2–10) are supported. A cloud
+post's queue status is `cloud_scheduled`, which the web app's own scheduler never sends, so a post
+is never published twice.
+
+Credentials: `CLOUD_SUPABASE_URL`, `CLOUD_SUPABASE_ANON_KEY`, `CLOUD_AUTH_EMAIL`,
+`CLOUD_AUTH_PASSWORD` from the K2 Press `.env`, or else from the Shorts Factory Desktop `.env`
+(`%APPDATA%\Shorts Factory Desktop\.env`). Pick each brand's cloud Instagram account in
+**Settings › Cloud** (matched automatically by `meta.accounts.<brand>.ig_user_id`).
+
+**Backend update required.** Image posts need the backend changes in
+`E:\AI\IG_ReelAutomation\cloud` (migration `202610150001_image_posts.sql` and the updated
+`publishing-api`, `publish-due-posts` and `cleanup-orphans` functions; Reels are unchanged).
+Run `deno test` there, then apply the migration and deploy the three functions. Until then the
+cloud refuses image posts with a clear error.
+
+## Publishing (direct, from this PC)
 
 Same rules as K2 Press's `meta.py`: Instagram needs `META_ACCESS_TOKEN` and `PUBLIC_BASE_URL` (an
 https address serving the K2 Press `outputs/` folder, since Meta fetches the images itself);
@@ -62,15 +90,23 @@ here** is on. Leave it off while the web app's scheduler runs so a post is never
 ## Build
 
 ```powershell
-cargo run --release -p photocraft
+cargo run --release -p photocraft --bin k2-press-desktop
 ```
+
+The executable is `target\release\k2-press-desktop.exe`.
 
 Tests: `cargo test -p photocraft-press -p photocraft-studio` and
 `cargo test -p photocraft-engine --test press`.
 
+## Branding
+
+The executable is `k2-press-desktop.exe` (window title "K2 Press", its own taskbar identity
+`ca.k2digitalmedia.k2press`, settings in `%APPDATA%\K2 Press Desktop`). The app icon is original
+(`packaging/k2press_icon.py`, see `assets/app-icon/README.md`). Crate names stay PhotoCraft's so
+upstream merges stay clean.
+
 ## Next
 
-- Rename the app's branding (window title, icon, settings folder) to K2 Press Desktop.
 - More layout recipes per brand (the web app's listicle, comparison, breaking, LinkedIn).
 - Video / Reels (the brand `video:` blocks).
 - Serve `outputs/` from the app so Instagram works without the web app.

@@ -261,7 +261,16 @@ impl<'a> Ctx<'a> {
         let t = &brand.theme;
         let bg = color(&t.navy, "#0a0f1e");
         let fg = color(&t.text, "#ffffff");
-        Ctx { brand, font: brand.font().to_string(), bg2: color(&t.navy2, &bg), accent: color(&t.accent, "#00b4c8"), accent2: color(&t.accent2, "#00c896"), muted: mix(&fg, &bg, 0.38), bg, fg }
+        Ctx {
+            brand,
+            font: brand.font().to_string(),
+            bg2: color(&t.navy2, &bg),
+            accent: color(&t.accent, "#00b4c8"),
+            accent2: color(&t.accent2, "#00c896"),
+            muted: mix(&fg, &bg, 0.38),
+            bg,
+            fg,
+        }
     }
 }
 
@@ -280,7 +289,8 @@ fn rounded(name: &str, r: [f64; 4], radius: f64, fill: Value) -> Step {
 /// Paragraph text in a box.
 #[allow(clippy::too_many_arguments)]
 fn text_box(c: &Ctx, name: &str, text: &str, r: [f64; 4], size: f64, col: &str, bold: bool, align: &str) -> Step {
-    let mut p = json!({"box": r, "text": text, "name": name, "font": c.font, "size": size.round(), "color": col, "align": align, "leading": (size * 1.18).round()});
+    let mut p =
+        json!({"box": r, "text": text, "name": name, "font": c.font, "size": size.round(), "color": col, "align": align, "leading": (size * 1.18).round()});
     if bold {
         p["weight"] = json!(700);
     }
@@ -398,7 +408,8 @@ fn title_image(c: &Ctx, plan: &Plan, fmt: Format, img: &str) -> Vec<Step> {
     }
     s.push(fade("Fade", [0.0, h * 0.30, w, h * 0.70], &alpha(&c.bg, 0.0), &c.bg));
     if let Some(l) = c.brand.logo.as_deref()
-        && let Some(i) = image(l, if c.brand.logo_shape == "wide" { [72.0, 64.0, 220.0, 76.0] } else { [72.0, 64.0, 84.0, 84.0] }, Fit::Contain, "Logo", 1.0, 0.0)
+        && let Some(i) =
+            image(l, if c.brand.logo_shape == "wide" { [72.0, 64.0, 220.0, 76.0] } else { [72.0, 64.0, 84.0, 84.0] }, Fit::Contain, "Logo", 1.0, 0.0)
     {
         s.push(i);
     }
@@ -607,7 +618,11 @@ fn quote_card(c: &Ctx, plan: &Plan, fmt: Format) -> Vec<Step> {
 fn cover_card(c: &Ctx, fmt: Format) -> Vec<Step> {
     let (w, h) = fmt.size();
     let (w, h) = (f64::from(w), f64::from(h));
-    let mut s = vec![rect("Glow", [0.0, 0.0, w, h], json!({"gradient": {"stops": [[0, alpha(&c.accent, 0.35)], [1, alpha(&c.bg, 0.0)]], "angle": 90, "style": "radial", "scale": 120}}))];
+    let mut s = vec![rect(
+        "Glow",
+        [0.0, 0.0, w, h],
+        json!({"gradient": {"stops": [[0, alpha(&c.accent, 0.35)], [1, alpha(&c.bg, 0.0)]], "angle": 90, "style": "radial", "scale": 120}}),
+    )];
     let mut y = h * 0.24;
     if let Some(l) = c.brand.logo.as_deref()
         && let Some(i) = image(l, [w / 2.0 - 170.0, y, 340.0, 340.0], Fit::Contain, "Logo", 1.0, 0.0)
@@ -615,7 +630,17 @@ fn cover_card(c: &Ctx, fmt: Format) -> Vec<Step> {
         s.push(i);
         y += 400.0;
     } else {
-        s.push(text_line(c, "Wordmark", if c.brand.short.is_empty() { &c.brand.name } else { &c.brand.short }, w / 2.0, y + 260.0, 260.0, &c.fg, true, "center"));
+        s.push(text_line(
+            c,
+            "Wordmark",
+            if c.brand.short.is_empty() { &c.brand.name } else { &c.brand.short },
+            w / 2.0,
+            y + 260.0,
+            260.0,
+            &c.fg,
+            true,
+            "center",
+        ));
         y += 340.0;
     }
     s.push(text_line(c, "Brand name", &c.brand.name, w / 2.0, y, 58.0, &c.fg, true, "center"));
@@ -647,7 +672,13 @@ pub fn slides(plan: &Plan, brand: &Brand, format: Option<Format>, style: Option<
             let mut out = vec![spec("01_title".into(), SlideKind::Title, fmt, &c.bg, title)];
             for (i, cs) in plan.content_slides.iter().take(8).enumerate() {
                 let n = i + 2;
-                out.push(spec(format!("{n:02}_content"), SlideKind::Content, fmt, &c.bg2, content_slide(&c, style, i + 1, &cs.heading, &cs.body, &cs.image, fmt)));
+                out.push(spec(
+                    format!("{n:02}_content"),
+                    SlideKind::Content,
+                    fmt,
+                    &c.bg2,
+                    content_slide(&c, style, i + 1, &cs.heading, &cs.body, &cs.image, fmt),
+                ));
             }
             let n = out.len() + 1;
             out.push(spec(format!("{n:02}_outro"), SlideKind::Outro, fmt, &c.bg, outro_slide(&c, plan, fmt)));

@@ -107,7 +107,8 @@ impl Brand {
             .map(|(k, c)| {
                 let name = c.get("name").and_then(Value::as_str).unwrap_or(k).to_string();
                 let enabled = c.get("enabled").and_then(Value::as_bool).unwrap_or(true);
-                let urls = c.get("urls").and_then(Value::as_array).map(|a| a.iter().filter_map(Value::as_str).map(str::to_string).collect()).unwrap_or_default();
+                let urls =
+                    c.get("urls").and_then(Value::as_array).map(|a| a.iter().filter_map(Value::as_str).map(str::to_string).collect()).unwrap_or_default();
                 (k.clone(), name, enabled, urls)
             })
             .collect()

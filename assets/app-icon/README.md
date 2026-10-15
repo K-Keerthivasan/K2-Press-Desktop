@@ -1,4 +1,16 @@
-# PhotoCraft app icon
+# App icon
+
+**K2 Press Desktop** ships its own icon: three post cards (green, teal, white with "K2") fanned on a
+navy tile in the K2 brand colours (`#0a0f1e` navy, `#00b4c8` teal, `#00c896` green). It is original
+artwork for this fork, drawn by `packaging/k2press_icon.py` (Pillow), which writes every PNG size,
+`photocraft.ico` and `photocraft.icns`; the file names stay PhotoCraft's so upstream merges are clean.
+`hicolor/scalable/apps/ai.storyteller.photocraft.svg` is the matching vector. Same licence as the
+code (MIT OR Apache-2.0).
+
+`photocraft.svg` and `photocraft-small.svg` below are upstream PhotoCraft's kitsune, kept for its
+tests and as credit.
+
+## Upstream PhotoCraft icon
 
 A **nine-tailed kitsune with a brow diamond**: an engraving portrait, seated, looking back at the
 viewer, in the Crafting Apps' owl-template framing (full-bleed field, head and body filling the

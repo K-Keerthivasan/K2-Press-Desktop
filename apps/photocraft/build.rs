@@ -13,12 +13,12 @@ fn main() {
     }
     let mut res = winresource::WindowsResource::new();
     res.set_icon("../../assets/app-icon/photocraft.ico")
-        .set("ProductName", "PhotoCraft")
-        .set("FileDescription", "PhotoCraft image editor")
-        .set("CompanyName", "Learning Machines LLC")
-        .set("LegalCopyright", "Copyright (c) the PhotoCraft authors. MIT OR Apache-2.0.")
-        .set("OriginalFilename", "photocraft.exe")
-        .set("InternalName", "photocraft");
+        .set("ProductName", "K2 Press Desktop")
+        .set("FileDescription", "K2 Press Desktop (made with PhotoCraft)")
+        .set("CompanyName", "K2 Digital Media")
+        .set("LegalCopyright", "Copyright (c) the PhotoCraft authors and K2 Digital Media. MIT OR Apache-2.0.")
+        .set("OriginalFilename", "k2-press-desktop.exe")
+        .set("InternalName", "k2-press-desktop");
     if let Err(e) = res.compile() {
         if std::env::var_os("PHOTOCRAFT_REQUIRE_WINRES").is_some() {
             panic!("embedding Windows resources failed: {e}");

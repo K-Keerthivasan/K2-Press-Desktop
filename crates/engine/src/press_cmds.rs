@@ -165,7 +165,9 @@ fn build(s: &mut Session, p: &Value) -> Result<Value> {
     let specs = specs_for(p, CMD)?;
     let only: Option<Vec<usize>> = match p.get("slides") {
         None | Some(Value::Null) => None,
-        Some(Value::Array(a)) => Some(a.iter().map(|v| v.as_u64().map(|n| n as usize).ok_or_else(|| bad(CMD, "`slides` holds slide indices (0 = first)"))).collect::<Result<_>>()?),
+        Some(Value::Array(a)) => {
+            Some(a.iter().map(|v| v.as_u64().map(|n| n as usize).ok_or_else(|| bad(CMD, "`slides` holds slide indices (0 = first)"))).collect::<Result<_>>()?)
+        }
         Some(_) => return Err(bad(CMD, "`slides` must be a list of slide indices")),
     };
     if let Some(o) = &only

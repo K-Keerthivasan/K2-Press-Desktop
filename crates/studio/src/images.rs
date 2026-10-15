@@ -49,7 +49,19 @@ pub fn search(env: &Env, source: &str, query: &str, count: usize) -> Result<Vec<
                 .map_err(|e| StudioError(format!("Unsplash: {}", crate::llm::http_error(e))))?
                 .into_json()
                 .map_err(|e| StudioError(format!("Unsplash: {e}")))?;
-            Ok(v.get("results").and_then(Value::as_array).into_iter().flatten().filter_map(|r| Some(Hit { thumb: r.pointer("/urls/small")?.as_str()?.into(), full: r.pointer("/urls/regular")?.as_str()?.into(), credit: r.pointer("/user/name").and_then(Value::as_str).unwrap_or("").into(), source: "unsplash".into() })).collect())
+            Ok(v.get("results")
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+                .filter_map(|r| {
+                    Some(Hit {
+                        thumb: r.pointer("/urls/small")?.as_str()?.into(),
+                        full: r.pointer("/urls/regular")?.as_str()?.into(),
+                        credit: r.pointer("/user/name").and_then(Value::as_str).unwrap_or("").into(),
+                        source: "unsplash".into(),
+                    })
+                })
+                .collect())
         }
         _ => {
             let key = env.get("PEXELS_API_KEY").ok_or_else(|| StudioError("PEXELS_API_KEY is not set in .env (free at pexels.com/api)".into()))?;
@@ -63,7 +75,19 @@ pub fn search(env: &Env, source: &str, query: &str, count: usize) -> Result<Vec<
                 .map_err(|e| StudioError(format!("Pexels: {}", crate::llm::http_error(e))))?
                 .into_json()
                 .map_err(|e| StudioError(format!("Pexels: {e}")))?;
-            Ok(v.get("photos").and_then(Value::as_array).into_iter().flatten().filter_map(|r| Some(Hit { thumb: r.pointer("/src/medium")?.as_str()?.into(), full: r.pointer("/src/large2x")?.as_str()?.into(), credit: r.get("photographer").and_then(Value::as_str).unwrap_or("").into(), source: "pexels".into() })).collect())
+            Ok(v.get("photos")
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+                .filter_map(|r| {
+                    Some(Hit {
+                        thumb: r.pointer("/src/medium")?.as_str()?.into(),
+                        full: r.pointer("/src/large2x")?.as_str()?.into(),
+                        credit: r.get("photographer").and_then(Value::as_str).unwrap_or("").into(),
+                        source: "pexels".into(),
+                    })
+                })
+                .collect())
         }
     }
 }

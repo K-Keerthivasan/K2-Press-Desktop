@@ -12,11 +12,15 @@
 //!   stories, shared with the web app.
 //! - [`schedule`]: posting slots, due checks and the month grid.
 //! - [`meta`]: Instagram and Facebook publishing through the Graph API.
+//! - [`cloud`]: scheduling and posting through the Shorts Factory Supabase backend (works while
+//!   the PC is off, and needs no public image URL).
 //!
 //! Network and disk calls block: callers run them off the UI thread.
 
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
 
+#[cfg(not(target_arch = "wasm32"))]
+pub mod cloud;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod config;
 #[cfg(not(target_arch = "wasm32"))]

@@ -4976,7 +4976,9 @@ name = "photocraft-studio"
 version = "0.9.0"
 dependencies = [
  "chrono",
+ "iana-time-zone",
  "log",
+ "photocraft-codecs",
  "photocraft-press",
  "roxmltree",
  "serde",

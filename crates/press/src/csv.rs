@@ -186,7 +186,12 @@ pub fn to_posts(headers: &[String], rows: &[BTreeMap<String, String>]) -> Vec<Cs
             let slides = grp
                 .iter()
                 .filter(|r| !get(r, &m, "heading").is_empty() || !get(r, &m, "body").is_empty())
-                .map(|r| ContentSlide { heading: get(r, &m, "heading"), body: get(r, &m, "body"), image_query: get(r, &m, "image_query"), image: String::new() })
+                .map(|r| ContentSlide {
+                    heading: get(r, &m, "heading"),
+                    body: get(r, &m, "body"),
+                    image_query: get(r, &m, "image_query"),
+                    image: String::new(),
+                })
                 .collect();
             posts.push(finish(head, &m, slides, &gid));
         }
@@ -264,7 +269,14 @@ pub fn to_plan(post: &CsvPost, brand: &Brand, format: &str) -> Plan {
         ..Default::default()
     };
     if matches!(fmt, "carousel" | "listicle") {
-        plan.title_card = TitleCard { headline: post.title.clone(), subhead: if post.subtitle.is_empty() { crate::text::clip(&slides.first().map(|s| s.body.clone()).unwrap_or_default(), 90) } else { post.subtitle.clone() } };
+        plan.title_card = TitleCard {
+            headline: post.title.clone(),
+            subhead: if post.subtitle.is_empty() {
+                crate::text::clip(&slides.first().map(|s| s.body.clone()).unwrap_or_default(), 90)
+            } else {
+                post.subtitle.clone()
+            },
+        };
         plan.content_slides = slides.into_iter().take(8).collect();
         plan.outro_card = OutroCard { cta, handle: brand.at_handle() };
     } else {
@@ -280,7 +292,10 @@ pub fn to_plan(post: &CsvPost, brand: &Brand, format: &str) -> Plan {
 pub fn to_brief(post: &CsvPost) -> (String, String) {
     let mut notes = post.notes.clone();
     if notes.is_empty() {
-        let parts: Vec<String> = std::iter::once(post.subtitle.clone()).chain(post.slides.iter().map(|s| format!("{}: {}", s.heading, s.body).trim_matches(|c| c == ':' || c == ' ').to_string())).filter(|p| !p.is_empty()).collect();
+        let parts: Vec<String> = std::iter::once(post.subtitle.clone())
+            .chain(post.slides.iter().map(|s| format!("{}: {}", s.heading, s.body).trim_matches(|c| c == ':' || c == ' ').to_string()))
+            .filter(|p| !p.is_empty())
+            .collect();
         notes = parts.join("\n");
     }
     if notes.is_empty() {

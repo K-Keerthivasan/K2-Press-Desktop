@@ -26,10 +26,17 @@ pub struct Settings {
     pub run_scheduler: bool,
     /// Last brand picked in the panel.
     pub brand: String,
+    /// Cloud Instagram account per brand (brand key → cloud account id); unset = matched by
+    /// the brand's Instagram id.
+    pub cloud_accounts: std::collections::BTreeMap<String, String>,
 }
 
 pub fn settings_dir() -> PathBuf {
-    let base = std::env::var_os("APPDATA").or_else(|| std::env::var_os("XDG_CONFIG_HOME")).map(PathBuf::from).or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".config"))).unwrap_or_else(std::env::temp_dir);
+    let base = std::env::var_os("APPDATA")
+        .or_else(|| std::env::var_os("XDG_CONFIG_HOME"))
+        .map(PathBuf::from)
+        .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".config")))
+        .unwrap_or_else(std::env::temp_dir);
     base.join("K2 Press Desktop")
 }
 
@@ -121,13 +128,35 @@ impl Home {
     /// `.env` merged under the process environment (the environment wins, as in python-dotenv).
     pub fn env(&self) -> Env {
         let mut vars = parse_env(&std::fs::read_to_string(self.root.join(".env")).unwrap_or_default());
+        // Cloud credentials: the K2 Press .env first, else the Shorts Factory Desktop library's
+        // .env (same Supabase backend), read in place.
+        if !vars.contains_key("CLOUD_SUPABASE_URL")
+            && let Some(sf) = shorts_factory_env()
+        {
+            for (k, v) in sf.into_iter().filter(|(k, _)| k.starts_with("CLOUD_")) {
+                vars.entry(k).or_insert(v);
+            }
+        }
         for (k, v) in std::env::vars() {
-            if vars.contains_key(&k) || k.starts_with("K2_") || k.starts_with("META_") || k.ends_with("_API_KEY") || k == "PUBLIC_BASE_URL" {
+            if vars.contains_key(&k)
+                || k.starts_with("K2_")
+                || k.starts_with("META_")
+                || k.starts_with("CLOUD_")
+                || k.ends_with("_API_KEY")
+                || k == "PUBLIC_BASE_URL"
+            {
                 vars.insert(k, v);
             }
         }
         Env { vars }
     }
+}
+
+/// The Shorts Factory Desktop library's `.env` (`%APPDATA%\Shorts Factory Desktop\.env`), if any.
+fn shorts_factory_env() -> Option<BTreeMap<String, String>> {
+    let base = std::env::var_os("APPDATA").map(PathBuf::from)?;
+    let text = std::fs::read_to_string(base.join("Shorts Factory Desktop").join(".env")).ok()?;
+    Some(parse_env(&text))
 }
 
 /// Settings from `.env` and the environment.

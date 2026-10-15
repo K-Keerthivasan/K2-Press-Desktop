@@ -33,14 +33,23 @@ struct Account {
 
 fn account(cfg: &Config, env: &Env, brand: &str) -> std::result::Result<Account, String> {
     let meta = cfg.at("meta").cloned().unwrap_or(Value::Null);
-    let acct = meta.get("accounts").and_then(|a| a.get(brand)).ok_or_else(|| format!("No Meta account mapped for brand '{brand}'. Add it under meta.accounts in config.yaml."))?;
+    let acct = meta
+        .get("accounts")
+        .and_then(|a| a.get(brand))
+        .ok_or_else(|| format!("No Meta account mapped for brand '{brand}'. Add it under meta.accounts in config.yaml."))?;
     let token_env = acct.get("token_env").or_else(|| meta.get("token_env")).and_then(Value::as_str).unwrap_or("META_ACCESS_TOKEN");
     let token = env.get(token_env).ok_or_else(|| format!("{token_env} is not set — put your Meta access token in .env"))?.to_string();
     let fb_token = acct.get("fb_token_env").and_then(Value::as_str).and_then(|k| env.get(k)).map_or_else(|| token.clone(), str::to_string);
     let ver = meta.get("api_version").and_then(Value::as_str).unwrap_or("v21.0");
     let fb_base = format!("https://graph.facebook.com/{ver}");
-    let ig_base = if acct.get("login").and_then(Value::as_str).unwrap_or("facebook").to_lowercase().starts_with("instagram") { format!("{IG_LOGIN_BASE}/{ver}") } else { fb_base.clone() };
-    let list = |v: Option<&Value>| -> Vec<String> { v.and_then(Value::as_array).map(|a| a.iter().filter_map(Value::as_str).map(str::to_lowercase).collect()).unwrap_or_default() };
+    let ig_base = if acct.get("login").and_then(Value::as_str).unwrap_or("facebook").to_lowercase().starts_with("instagram") {
+        format!("{IG_LOGIN_BASE}/{ver}")
+    } else {
+        fb_base.clone()
+    };
+    let list = |v: Option<&Value>| -> Vec<String> {
+        v.and_then(Value::as_array).map(|a| a.iter().filter_map(Value::as_str).map(str::to_lowercase).collect()).unwrap_or_default()
+    };
     let mut targets = list(acct.get("targets"));
     if targets.is_empty() {
         targets = list(meta.pointer("/publish/default_targets"));
@@ -52,11 +61,24 @@ fn account(cfg: &Config, env: &Env, brand: &str) -> std::result::Result<Account,
         targets = vec!["instagram".into(), "facebook".into()];
     }
     let rl = meta.get("rate_limit");
-    let max = rl.and_then(|r| r.get("max_posts_per_day")).and_then(Value::as_i64).unwrap_or(25) - rl.and_then(|r| r.get("safety_margin")).and_then(Value::as_i64).unwrap_or(2);
+    let max = rl.and_then(|r| r.get("max_posts_per_day")).and_then(Value::as_i64).unwrap_or(25)
+        - rl.and_then(|r| r.get("safety_margin")).and_then(Value::as_i64).unwrap_or(2);
     Ok(Account {
         brand: brand.into(),
-        ig_id: acct.get("ig_user_id").map(|v| v.as_str().map_or_else(|| v.to_string(), str::to_string)).unwrap_or_default().trim().trim_matches('"').to_string(),
-        page_id: acct.get("fb_page_id").map(|v| v.as_str().map_or_else(|| v.to_string(), str::to_string)).unwrap_or_default().trim().trim_matches('"').to_string(),
+        ig_id: acct
+            .get("ig_user_id")
+            .map(|v| v.as_str().map_or_else(|| v.to_string(), str::to_string))
+            .unwrap_or_default()
+            .trim()
+            .trim_matches('"')
+            .to_string(),
+        page_id: acct
+            .get("fb_page_id")
+            .map(|v| v.as_str().map_or_else(|| v.to_string(), str::to_string))
+            .unwrap_or_default()
+            .trim()
+            .trim_matches('"')
+            .to_string(),
         token,
         fb_token,
         targets,
@@ -77,7 +99,8 @@ fn graph_result(r: std::result::Result<ureq::Response, ureq::Error>) -> Result<V
         Err(ureq::Error::Status(code, resp)) => (code, resp.into_string().unwrap_or_default()),
         Err(ureq::Error::Transport(t)) => return err(format!("Graph API unreachable: {t}")),
     };
-    let v: Value = serde_json::from_str(&text).map_err(|_| StudioError(format!("Graph API returned non-JSON ({code}): {}", photocraft_press::text::clip(&text, 200))))?;
+    let v: Value =
+        serde_json::from_str(&text).map_err(|_| StudioError(format!("Graph API returned non-JSON ({code}): {}", photocraft_press::text::clip(&text, 200))))?;
     if code >= 400 || v.get("error").is_some() {
         let e = v.get("error").cloned().unwrap_or(Value::Null);
         let msg = e.get("error_user_msg").or_else(|| e.get("message")).and_then(Value::as_str).unwrap_or(&text).to_string();
@@ -154,7 +177,9 @@ fn wait_ready(base: &str, token: &str, container: &str) -> Result<()> {
 
 fn publish_instagram(home: &Home, a: &Account, ptype: &str, urls: &[String], caption: &str) -> Result<Value> {
     if urls.is_empty() {
-        return err("Instagram publishing needs public image URLs. Set PUBLIC_BASE_URL in .env to an https address that serves the K2 Press outputs folder, then republish.");
+        return err(
+            "Instagram publishing needs public image URLs. Set PUBLIC_BASE_URL in .env to an https address that serves the K2 Press outputs folder, then republish.",
+        );
     }
     if let Some(u) = urls.iter().find(|u| u.starts_with("http://localhost") || u.starts_with("http://127.0.0.1")) {
         return err(format!("PUBLIC_BASE_URL points at localhost ({u}). Meta's servers must be able to fetch the image — use a publicly reachable https URL."));
@@ -194,7 +219,8 @@ fn publish_instagram(home: &Home, a: &Account, ptype: &str, urls: &[String], cap
     };
     let media_id = id_of(&post(b, &format!("{ig}/media_publish"), t, &[("creation_id", container)])?)?;
     rate_note(home, &key);
-    let permalink = get(b, &media_id, t, &[("fields", "permalink")]).ok().and_then(|v| v.get("permalink").and_then(Value::as_str).map(str::to_string)).unwrap_or_default();
+    let permalink =
+        get(b, &media_id, t, &[("fields", "permalink")]).ok().and_then(|v| v.get("permalink").and_then(Value::as_str).map(str::to_string)).unwrap_or_default();
     Ok(json!({"platform": "instagram", "media_id": media_id, "permalink": permalink, "post_type": ptype}))
 }
 
@@ -243,7 +269,9 @@ fn publish_facebook(home: &Home, a: &Account, ptype: &str, files: &[PathBuf], ca
         id_of(&post(b, &format!("{page}/feed"), t, &[("message", caption.into()), ("attached_media", Value::Array(media).to_string())])?)?
     };
     rate_note(home, &key);
-    Ok(json!({"platform": "facebook", "media_id": post_id, "post_type": ptype, "permalink": format!("https://www.facebook.com/{}", post_id.replace('_', "/posts/"))}))
+    Ok(
+        json!({"platform": "facebook", "media_id": post_id, "post_type": ptype, "permalink": format!("https://www.facebook.com/{}", post_id.replace('_', "/posts/"))}),
+    )
 }
 
 /// Publish one queue entry to its brand's targets; returns the web app's `publish` record:
@@ -262,11 +290,20 @@ pub fn publish_entry_record(home: &Home, cfg: &Config, env: &Env, e: &Entry) -> 
     };
     let base = env.get("PUBLIC_BASE_URL").unwrap_or("").trim_end_matches('/').to_string();
     let rel = s(e, "rel");
-    let urls: Vec<String> = if base.is_empty() { Vec::new() } else { e.get("files").and_then(Value::as_array).into_iter().flatten().filter_map(Value::as_str).map(|f| format!("{base}/outputs/{rel}/{f}")).collect() };
+    let urls: Vec<String> = if base.is_empty() {
+        Vec::new()
+    } else {
+        e.get("files").and_then(Value::as_array).into_iter().flatten().filter_map(Value::as_str).map(|f| format!("{base}/outputs/{rel}/{f}")).collect()
+    };
     let ptype = photocraft_press::Format::from_key(s(e, "format")).post_type(files.len());
     let caption = s(e, "caption");
     let caption: String = if caption.chars().count() > 2200 { caption.chars().take(2199).collect::<String>() + "…" } else { caption.to_string() };
-    let targets: Vec<String> = e.get("targets").and_then(Value::as_array).map(|t| t.iter().filter_map(Value::as_str).map(str::to_lowercase).collect()).filter(|t: &Vec<String>| !t.is_empty()).unwrap_or_else(|| a.targets.clone());
+    let targets: Vec<String> = e
+        .get("targets")
+        .and_then(Value::as_array)
+        .map(|t| t.iter().filter_map(Value::as_str).map(str::to_lowercase).collect())
+        .filter(|t: &Vec<String>| !t.is_empty())
+        .unwrap_or_else(|| a.targets.clone());
     let mut results = Vec::new();
     let mut errors = Vec::new();
     for t in &targets {

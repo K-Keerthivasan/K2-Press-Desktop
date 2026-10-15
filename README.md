@@ -7,11 +7,15 @@ team and the PhotoCraft contributors. Everything PhotoCraft does is here. On top
 Studio** (Window › Post Studio) brings in K2 Press: AI-written carousels and single posts from an
 idea, RSS stories or a spreadsheet, built as fully editable PhotoCraft documents, then exported to
 the review queue, scheduled on a calendar and published to Instagram and Facebook. It shares the
-K2 Press library folder in place. See [docs/POST-STUDIO.md](docs/POST-STUDIO.md).
+K2 Press library folder in place, and schedules or posts through the same Supabase cloud
+backend as Shorts Factory, so posts go out while the PC is off. See
+[docs/POST-STUDIO.md](docs/POST-STUDIO.md).
 
 ```powershell
-cargo run --release -p photocraft
+cargo run --release -p photocraft --bin k2-press-desktop
 ```
+
+The executable is `target\release\k2-press-desktop.exe`.
 
 ---
 

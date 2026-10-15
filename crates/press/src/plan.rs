@@ -94,7 +94,9 @@ impl Plan {
         Plan {
             format: "carousel".into(),
             title_card: TitleCard { headline: "Your headline".into(), subhead: "One compelling hook sentence.".into() },
-            content_slides: (0..content.clamp(1, 8)).map(|i| ContentSlide { heading: format!("POINT {}", i + 1), body: "— First point\n— Second point".into(), ..Default::default() }).collect(),
+            content_slides: (0..content.clamp(1, 8))
+                .map(|i| ContentSlide { heading: format!("POINT {}", i + 1), body: "— First point\n— Second point".into(), ..Default::default() })
+                .collect(),
             outro_card: OutroCard { cta: "Follow for more".into(), handle: brand.at_handle() },
             hashtags: brand.hashtags.clone(),
             platform: "instagram".into(),
@@ -108,7 +110,13 @@ impl Plan {
     pub fn full_caption(&self) -> String {
         let mut text = self.caption.trim().to_string();
         if !self.hashtags.is_empty() {
-            let tags: Vec<String> = self.hashtags.iter().map(|t| t.trim()).filter(|t| !t.is_empty()).map(|t| if t.starts_with('#') { t.to_string() } else { format!("#{t}") }).collect();
+            let tags: Vec<String> = self
+                .hashtags
+                .iter()
+                .map(|t| t.trim())
+                .filter(|t| !t.is_empty())
+                .map(|t| if t.starts_with('#') { t.to_string() } else { format!("#{t}") })
+                .collect();
             if !tags.is_empty() {
                 text = format!("{text}\n\n{}", tags.join(" ")).trim().to_string();
             }

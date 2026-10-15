@@ -39,7 +39,9 @@ pub struct Slots {
 }
 
 pub fn slots(cfg: &Config) -> Slots {
-    let strs = |k: &str| -> Vec<String> { cfg.at(k).and_then(Value::as_array).map(|a| a.iter().filter_map(Value::as_str).map(str::to_string).collect()).unwrap_or_default() };
+    let strs = |k: &str| -> Vec<String> {
+        cfg.at(k).and_then(Value::as_array).map(|a| a.iter().filter_map(Value::as_str).map(str::to_string).collect()).unwrap_or_default()
+    };
     let mut times: Vec<NaiveTime> = strs("schedule.times").iter().filter_map(|t| NaiveTime::parse_from_str(t.trim(), "%H:%M").ok()).collect();
     if times.is_empty() {
         times = [9, 13, 18].iter().filter_map(|h| NaiveTime::from_hms_opt(*h, 0, 0)).collect();
@@ -56,7 +58,11 @@ pub fn slots(cfg: &Config) -> Slots {
 /// The next `count` free posting slots after `from` (taken = already scheduled times).
 pub fn next_slots(cfg: &Config, entries: &[Entry], count: usize, from: NaiveDateTime) -> Vec<NaiveDateTime> {
     let sl = slots(cfg);
-    let taken: Vec<NaiveDateTime> = entries.iter().filter(|e| matches!(s(e, "status"), "scheduled" | "published")).filter_map(|e| parse_when(s(e, "scheduled_at"))).collect();
+    let taken: Vec<NaiveDateTime> = entries
+        .iter()
+        .filter(|e| matches!(s(e, "status"), "scheduled" | "cloud_scheduled" | "published"))
+        .filter_map(|e| parse_when(s(e, "scheduled_at")))
+        .collect();
     let mut out = Vec::new();
     let mut day = from.date();
     for _ in 0..400 {

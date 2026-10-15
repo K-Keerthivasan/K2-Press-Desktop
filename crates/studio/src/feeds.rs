@@ -51,13 +51,19 @@ pub fn parse(text: &str, url: &str) -> Result<Vec<Story>> {
         let link = n
             .children()
             .filter(|c| c.is_element() && c.tag_name().name() == "link")
-            .find_map(|c| c.attribute("href").filter(|_| c.attribute("rel").is_none_or(|r| r == "alternate")).map(str::to_string).or_else(|| c.text().map(|t| t.trim().to_string())))
+            .find_map(|c| {
+                c.attribute("href")
+                    .filter(|_| c.attribute("rel").is_none_or(|r| r == "alternate"))
+                    .map(str::to_string)
+                    .or_else(|| c.text().map(|t| t.trim().to_string()))
+            })
             .unwrap_or_default();
         let raw_summary = ["description", "summary", "content", "encoded"].iter().find_map(|k| child_text(n, k)).unwrap_or("");
         let mut summary = strip_html(raw_summary);
         // YouTube: the description lives in media:group/media:description.
         if summary.is_empty() {
-            summary = n.descendants().find(|d| d.is_element() && d.tag_name().name() == "description").and_then(|d| d.text()).map(strip_html).unwrap_or_default();
+            summary =
+                n.descendants().find(|d| d.is_element() && d.tag_name().name() == "description").and_then(|d| d.text()).map(strip_html).unwrap_or_default();
         }
         let published = ["pubDate", "published", "updated", "date"].iter().find_map(|k| child_text(n, k)).unwrap_or("").trim().to_string();
         let image = n

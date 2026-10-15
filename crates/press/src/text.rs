@@ -28,8 +28,69 @@ pub fn split_tags(value: &str) -> Vec<String> {
 }
 
 const STOPWORDS: &[&str] = &[
-    "the", "a", "an", "is", "are", "was", "were", "to", "of", "in", "on", "for", "and", "or", "with", "its", "it's", "this", "that", "new", "after", "before", "says", "say", "said", "how", "why", "what", "will", "has", "have", "into", "from", "by", "as", "at", "be", "been", "not", "no", "but", "so", "up",
-    "out", "over", "under", "than", "you", "your", "now", "just", "could", "would", "should", "report", "reportedly", "confirms", "confirmed", "according", "announced", "announces", "week", "today",
+    "the",
+    "a",
+    "an",
+    "is",
+    "are",
+    "was",
+    "were",
+    "to",
+    "of",
+    "in",
+    "on",
+    "for",
+    "and",
+    "or",
+    "with",
+    "its",
+    "it's",
+    "this",
+    "that",
+    "new",
+    "after",
+    "before",
+    "says",
+    "say",
+    "said",
+    "how",
+    "why",
+    "what",
+    "will",
+    "has",
+    "have",
+    "into",
+    "from",
+    "by",
+    "as",
+    "at",
+    "be",
+    "been",
+    "not",
+    "no",
+    "but",
+    "so",
+    "up",
+    "out",
+    "over",
+    "under",
+    "than",
+    "you",
+    "your",
+    "now",
+    "just",
+    "could",
+    "would",
+    "should",
+    "report",
+    "reportedly",
+    "confirms",
+    "confirmed",
+    "according",
+    "announced",
+    "announces",
+    "week",
+    "today",
 ];
 
 fn sig_words(text: &str) -> BTreeSet<String> {
@@ -81,6 +142,13 @@ pub fn strip_html(s: &str) -> String {
             _ => {}
         }
     }
-    let out = out.replace("&nbsp;", " ").replace("&amp;", "&").replace("&quot;", "\"").replace("&#39;", "'").replace("&#8217;", "’").replace("&lt;", "<").replace("&gt;", ">");
+    let out = out
+        .replace("&nbsp;", " ")
+        .replace("&amp;", "&")
+        .replace("&quot;", "\"")
+        .replace("&#39;", "'")
+        .replace("&#8217;", "’")
+        .replace("&lt;", "<")
+        .replace("&gt;", ">");
     out.split_whitespace().collect::<Vec<_>>().join(" ")
 }

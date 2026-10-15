@@ -3,9 +3,14 @@ name = "photocraft"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
-default-run = "photocraft"
-description = "Photocraft: an open-source, native image editor"
+default-run = "k2-press-desktop"
+description = "K2 Press Desktop: social post studio and image editor, made with PhotoCraft"
 build = "build.rs"
+
+# The desktop executable. The crate keeps PhotoCraft's name so the fork merges cleanly upstream.
+[[bin]]
+name = "k2-press-desktop"
+path = "src/main.rs"
 
 [features]
 # Open HEIC/HEIF photos (the optional photocraft-heif crate). Not default so distributors choose

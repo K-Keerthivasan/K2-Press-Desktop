@@ -72,7 +72,11 @@ impl Backend {
                 timeout_s: env.get("K2_HERMES_TIMEOUT").and_then(|t| t.parse().ok()).unwrap_or(300),
             }
         } else {
-            Backend::OpenAi { base_url: base.trim_end_matches('/').to_string(), model, api_key: env.get("K2_LLM_API_KEY").or_else(|| cfg.at("llm.api_key").and_then(Value::as_str)).unwrap_or("ollama").to_string() }
+            Backend::OpenAi {
+                base_url: base.trim_end_matches('/').to_string(),
+                model,
+                api_key: env.get("K2_LLM_API_KEY").or_else(|| cfg.at("llm.api_key").and_then(Value::as_str)).unwrap_or("ollama").to_string(),
+            }
         }
     }
 
@@ -95,9 +99,16 @@ impl Backend {
                 let msgs: Vec<Value> = messages.iter().map(|(r, c)| json!({"role": r, "content": c})).collect();
                 let body = json!({"model": model, "messages": msgs, "temperature": 0.1, "response_format": {"type": "json_object"}, "stream": false});
                 let agent = ureq::AgentBuilder::new().timeout(Duration::from_secs(600)).build();
-                let resp = agent.post(&format!("{base_url}/chat/completions")).set("Authorization", &format!("Bearer {api_key}")).send_json(body).map_err(|e| StudioError(format!("AI server at {base_url}: {}", http_error(e))))?;
+                let resp = agent
+                    .post(&format!("{base_url}/chat/completions"))
+                    .set("Authorization", &format!("Bearer {api_key}"))
+                    .send_json(body)
+                    .map_err(|e| StudioError(format!("AI server at {base_url}: {}", http_error(e))))?;
                 let v: Value = resp.into_json().map_err(|e| StudioError(format!("AI server reply: {e}")))?;
-                v.pointer("/choices/0/message/content").and_then(Value::as_str).map(str::to_string).ok_or_else(|| StudioError("AI server reply has no message".into()))
+                v.pointer("/choices/0/message/content")
+                    .and_then(Value::as_str)
+                    .map(str::to_string)
+                    .ok_or_else(|| StudioError("AI server reply has no message".into()))
             }
         }
     }
@@ -127,7 +138,9 @@ fn run_with_timeout(mut cmd: Command, timeout: Duration, name: &str) -> Result<S
         // No console window flashing up for each request.
         cmd.creation_flags(0x0800_0000);
     }
-    let mut child = cmd.spawn().map_err(|e| StudioError(format!("could not start `{name}` ({e}). Is the Hermes CLI installed? Or switch the AI to Ollama in Settings.")))?;
+    let mut child = cmd
+        .spawn()
+        .map_err(|e| StudioError(format!("could not start `{name}` ({e}). Is the Hermes CLI installed? Or switch the AI to Ollama in Settings.")))?;
     let mut out = child.stdout.take();
     let mut errp = child.stderr.take();
     let reader = std::thread::spawn(move || {

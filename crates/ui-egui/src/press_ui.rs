@@ -24,7 +24,7 @@ use photocraft_studio::home::{Home, Settings};
 use photocraft_studio::library::{self, Entry};
 use photocraft_studio::llm::Backend;
 use photocraft_studio::planner::{self, Request};
-use photocraft_studio::{Story, feeds, images, meta, schedule};
+use photocraft_studio::{Story, cloud, feeds, images, meta, schedule};
 use serde_json::{Value, json};
 
 use crate::PhotocraftApp;
@@ -132,6 +132,7 @@ pub struct State {
     // Settings
     home_input: String,
     verify_text: String,
+    cloud_accounts: Vec<cloud::Account>,
     // Jobs
     job: Option<Job>,
     status: String,
@@ -183,6 +184,7 @@ impl Default for State {
             cal: (now.year(), now.month()),
             home_input: String::new(),
             verify_text: String::new(),
+            cloud_accounts: Vec::new(),
             job: None,
             status: String::new(),
             error: String::new(),
@@ -334,7 +336,8 @@ fn export_docs(app: &mut PhotocraftApp, plan: &Plan, brand: &str, docs: &[(DocId
     if docs.is_empty() {
         return Err("nothing to export: build the post first".into());
     }
-    let (rel, dir) = library::new_output_dir(&home, brand, if plan.slug.is_empty() { plan.title() } else { &plan.slug }, plan.format().key()).map_err(|e| e.0)?;
+    let (rel, dir) =
+        library::new_output_dir(&home, brand, if plan.slug.is_empty() { plan.title() } else { &plan.slug }, plan.format().key()).map_err(|e| e.0)?;
     let before = app.session.active_index();
     let mut files = Vec::new();
     for (id, name) in docs {
@@ -393,8 +396,8 @@ pub fn panel(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
     let t = Tokens::get(ui.ctx());
     egui::Panel::left("post-studio")
         .resizable(true)
-        .default_size(400.0)
-        .min_size(320.0)
+        .default_size(470.0)
+        .min_size(340.0)
         .frame(egui::Frame::NONE.fill(t.chrome).inner_margin(egui::Margin::symmetric(10, 8)))
         .show(ui, |ui| {
             header(app, ui);
@@ -414,31 +417,68 @@ pub fn panel(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
 
 fn header(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
     let ctx = ui.ctx().clone();
+    let t = Tokens::get(&ctx);
+    let brand = app.press.brand();
+    let accent = brand.as_ref().and_then(|b| hex_color(&b.theme.accent)).unwrap_or(t.accent);
     ui.horizontal(|ui| {
-        ui.label(RichText::new("Post Studio").strong().size(15.0));
-        if let Some(cfg) = &app.press.cfg {
-            let current = cfg.brand(&app.press.brand).map(|b| b.name.clone()).unwrap_or_else(|| "—".into());
-            let mut pick = None;
-            egui::ComboBox::from_id_salt("press-brand").selected_text(current).show_ui(ui, |ui| {
-                for b in &cfg.brands {
-                    if ui.selectable_label(b.key == app.press.brand, &b.name).clicked() {
-                        pick = Some(b.key.clone());
-                    }
-                }
-            });
-            if let Some(k) = pick {
-                app.press.brand = k.clone();
-                app.press.settings.brand = k;
-                let _ = app.press.settings.save();
-                app.press.stories.clear();
-                app.press.saved.clear();
+        // The brand's logo, else a dot in its accent colour.
+        let logo = brand.as_ref().and_then(|b| b.logo.clone()).and_then(|l| thumb(app, &ctx, std::path::Path::new(&l)));
+        match logo {
+            Some(tex) => {
+                let s = tex.size_vec2();
+                let k = 26.0 / s.y.max(1.0);
+                ui.add(egui::Image::new(&tex).fit_to_exact_size(s * k));
+            }
+            None => {
+                let (r, _) = ui.allocate_exact_size(egui::vec2(14.0, 14.0), egui::Sense::hover());
+                ui.painter().circle_filled(r.center(), 6.0, accent);
             }
         }
+        ui.vertical(|ui| {
+            ui.spacing_mut().item_spacing.y = 0.0;
+            ui.label(RichText::new("Post Studio").strong().size(16.0).color(t.text));
+            ui.label(RichText::new(brand.as_ref().map(|b| b.at_handle()).unwrap_or_default()).size(11.0).color(t.text_faint));
+        });
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            // Settings sits beside the brand picker, so the tab bar fits on one line.
+            if crate::icons::button(ui, "settings", 26.0, app.press.tab == Tab::Settings, "Post Studio settings").clicked() {
+                app.press.tab = Tab::Settings;
+            }
+            if let Some(cfg) = &app.press.cfg {
+                let current = cfg.brand(&app.press.brand).map(|b| b.name.clone()).unwrap_or_else(|| "—".into());
+                let mut pick = None;
+                egui::ComboBox::from_id_salt("press-brand").selected_text(current).width(150.0).show_ui(ui, |ui| {
+                    for b in &cfg.brands {
+                        if ui.selectable_label(b.key == app.press.brand, &b.name).clicked() {
+                            pick = Some(b.key.clone());
+                        }
+                    }
+                });
+                if let Some(k) = pick {
+                    app.press.brand = k.clone();
+                    app.press.settings.brand = k;
+                    let _ = app.press.settings.save();
+                    app.press.stories.clear();
+                    app.press.saved.clear();
+                }
+            }
+        });
     });
+    // Brand accent rule under the title.
+    let (r, _) = ui.allocate_exact_size(egui::vec2(ui.available_width(), 3.0), egui::Sense::hover());
+    ui.painter().rect_filled(egui::Rect::from_min_size(r.min, egui::vec2(48.0, 3.0)), 1.5, accent);
+    ui.add_space(4.0);
     ui.horizontal_wrapped(|ui| {
+        ui.spacing_mut().item_spacing.x = 4.0;
         let pending = app.press.queue.iter().filter(|e| library::s(e, "status") == "pending").count();
-        for (tab, label) in [(Tab::Create, "Create".to_string()), (Tab::Post, "Post".into()), (Tab::Queue, if pending > 0 { format!("Queue ({pending})") } else { "Queue".into() }), (Tab::Calendar, "Calendar".into()), (Tab::Settings, "Settings".into())] {
-            if ui.selectable_label(app.press.tab == tab, label).clicked() {
+        let tabs = [
+            (Tab::Create, "sparkles", "Create".to_string()),
+            (Tab::Post, "image", if app.press.plan.is_some() { "Post •".to_string() } else { "Post".into() }),
+            (Tab::Queue, "layers", if pending > 0 { format!("Queue {pending}") } else { "Queue".into() }),
+            (Tab::Calendar, "clock", "Calendar".into()),
+        ];
+        for (tab, icon, label) in tabs {
+            if tab_button(ui, icon, &label, app.press.tab == tab).clicked() {
                 app.press.tab = tab;
                 if matches!(tab, Tab::Queue | Tab::Calendar) {
                     app.press.refresh_queue();
@@ -446,12 +486,13 @@ fn header(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
             }
         }
     });
+    ui.add_space(4.0);
     if let Some(job) = &app.press.job {
         let mut stop = false;
-        ui.horizontal(|ui| {
+        banner(ui, t.accent, |ui| {
             ui.spinner();
             let p = if job.progress.is_empty() { String::new() } else { format!(" — {}", job.progress) };
-            ui.label(format!("{}{p} ({}s)", job.label, job.started.elapsed().as_secs()));
+            ui.label(RichText::new(format!("{}{p}  ({}s)", job.label, job.started.elapsed().as_secs())).color(t.text));
             stop = ui.small_button("Stop").clicked();
         });
         if stop {
@@ -461,21 +502,92 @@ fn header(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
     }
     if !app.press.error.is_empty() {
         let mut clear = false;
-        ui.horizontal_wrapped(|ui| {
-            ui.colored_label(Color32::from_rgb(235, 90, 80), &app.press.error);
+        banner(ui, t.danger, |ui| {
+            ui.add(egui::Label::new(RichText::new(&app.press.error).color(t.text)).wrap());
             clear = ui.small_button("×").clicked();
         });
         if clear {
             app.press.error.clear();
         }
     } else if !app.press.status.is_empty() {
-        ui.colored_label(Color32::from_rgb(90, 190, 120), &app.press.status);
+        let mut clear = false;
+        banner(ui, Color32::from_rgb(60, 170, 110), |ui| {
+            ui.add(egui::Label::new(RichText::new(&app.press.status).color(t.text)).wrap());
+            clear = ui.small_button("×").clicked();
+        });
+        if clear {
+            app.press.status.clear();
+        }
     }
 }
 
+fn hex_color(hex: &str) -> Option<Color32> {
+    let h = hex.trim().trim_start_matches('#');
+    let b = |i: usize| u8::from_str_radix(h.get(i..i + 2)?, 16).ok();
+    if h.len() == 6 { Some(Color32::from_rgb(b(0)?, b(2)?, b(4)?)) } else { None }
+}
+
+/// A tab in the panel's tab bar: icon and label, filled when selected.
+fn tab_button(ui: &mut egui::Ui, icon: &str, label: &str, selected: bool) -> egui::Response {
+    let t = Tokens::get(ui.ctx());
+    let fg = if selected { t.primary_text } else { t.text_dim };
+    let b = egui::Button::image_and_text(crate::icons::image(icon, 14.0, fg), RichText::new(label).color(fg))
+        .fill(if selected { t.primary_bg } else { Color32::TRANSPARENT })
+        .stroke(egui::Stroke::NONE)
+        .corner_radius(t.radius)
+        .min_size(egui::vec2(0.0, 26.0));
+    ui.add(b)
+}
+
+/// A tinted strip for progress, errors and confirmations.
+fn banner(ui: &mut egui::Ui, color: Color32, add: impl FnOnce(&mut egui::Ui)) {
+    let t = Tokens::get(ui.ctx());
+    egui::Frame::NONE
+        .fill(color.gamma_multiply(0.18))
+        .stroke(egui::Stroke::new(1.0, color.gamma_multiply(0.6)))
+        .corner_radius(t.radius)
+        .inner_margin(egui::Margin::symmetric(8, 6))
+        .show(ui, |ui| {
+            ui.set_width(ui.available_width());
+            ui.horizontal_wrapped(add);
+        });
+    ui.add_space(4.0);
+}
+
+/// A rounded card around a group of controls.
+fn card<R>(ui: &mut egui::Ui, add: impl FnOnce(&mut egui::Ui) -> R) -> R {
+    let t = Tokens::get(ui.ctx());
+    let r = egui::Frame::NONE
+        .fill(t.card)
+        .stroke(egui::Stroke::new(1.0, t.card_border))
+        .corner_radius(t.radius_lg)
+        .inner_margin(egui::Margin::same(10))
+        .show(ui, |ui| {
+            ui.set_width(ui.available_width());
+            add(ui)
+        })
+        .inner;
+    ui.add_space(8.0);
+    r
+}
+
+/// A small coloured status label.
+fn pill(ui: &mut egui::Ui, text: &str, color: Color32) {
+    egui::Frame::NONE.fill(color.gamma_multiply(0.22)).corner_radius(8.0).inner_margin(egui::Margin::symmetric(7, 1)).show(ui, |ui| {
+        ui.label(RichText::new(text).size(11.0).color(color));
+    });
+}
+
 fn section(ui: &mut egui::Ui, title: &str) {
-    ui.add_space(6.0);
-    ui.label(RichText::new(title).strong());
+    let t = Tokens::get(ui.ctx());
+    ui.add_space(2.0);
+    ui.label(RichText::new(title.to_uppercase()).size(11.0).strong().color(t.text_faint));
+    ui.add_space(2.0);
+}
+
+/// The panel's main call to action.
+fn primary(ui: &mut egui::Ui, enabled: bool, label: &str) -> bool {
+    ui.add_enabled_ui(enabled, |ui| crate::widgets::primary_button(ui, label, 0.0).clicked()).inner
 }
 
 fn combo(ui: &mut egui::Ui, id: &str, value: &mut String, options: &[(&str, &str)]) {
@@ -498,12 +610,20 @@ fn format_combo(ui: &mut egui::Ui, id: &str, f: &mut Format) {
 // ── Create ───────────────────────────────────────────────────────────────────
 
 fn create_tab(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
-    ui.horizontal(|ui| {
-        for (s, l) in [(Source::Idea, "Idea"), (Source::Stories, "Stories"), (Source::Sheet, "Sheet"), (Source::Saved, "Saved")] {
-            ui.selectable_value(&mut app.press.source, s, l);
+    ui.horizontal_wrapped(|ui| {
+        ui.spacing_mut().item_spacing.x = 4.0;
+        for (s, icon, l) in [
+            (Source::Idea, "pencil", "Idea"),
+            (Source::Stories, "compass", "Stories"),
+            (Source::Sheet, "grid-3x3", "Sheet"),
+            (Source::Saved, "folder-open", "Saved"),
+        ] {
+            if tab_button(ui, icon, l, app.press.source == s).clicked() {
+                app.press.source = s;
+            }
         }
     });
-    ui.separator();
+    ui.add_space(6.0);
     match app.press.source {
         Source::Idea => idea_ui(app, ui),
         Source::Stories => stories_ui(app, ui),
@@ -513,41 +633,52 @@ fn create_tab(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
 }
 
 fn options_ui(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
-    let s = &mut app.press;
-    egui::Grid::new("press-opts").num_columns(2).spacing([8.0, 6.0]).show(ui, |ui| {
-        ui.label("Format");
-        format_combo(ui, "press-fmt", &mut s.format);
-        ui.end_row();
-        if s.format == Format::Carousel {
-            ui.label("Slides");
-            ui.add(egui::Slider::new(&mut s.total_slides, 3..=10));
+    card(ui, |ui| {
+        section(ui, "Post settings");
+        let s = &mut app.press;
+        egui::Grid::new("press-opts").num_columns(2).spacing([8.0, 6.0]).show(ui, |ui| {
+            ui.label("Format");
+            format_combo(ui, "press-fmt", &mut s.format);
             ui.end_row();
-        }
-        ui.label("Platform");
-        let plats: Vec<(&str, &str)> = planner::PLATFORMS.iter().map(|p| (p.0, p.1)).collect();
-        combo(ui, "press-plat", &mut s.platform, &plats);
-        ui.end_row();
-        ui.label("Content type");
-        let brand_types = s.cfg.as_ref().and_then(|c| c.brand(&s.brand)).map(|b| b.content_types.clone()).unwrap_or_default();
-        let mut types: Vec<(String, String)> = vec![("general".into(), "General".into())];
-        if brand_types.is_empty() {
-            types.extend(planner::CONTENT_TYPES.iter().skip(1).take(6).map(|c| (c.0.to_string(), c.1.to_string())));
-        } else {
-            types.extend(brand_types.iter().map(|c| (c.value.clone(), c.label.clone())));
-        }
-        let refs: Vec<(&str, &str)> = types.iter().map(|(a, b)| (a.as_str(), b.as_str())).collect();
-        combo(ui, "press-ctype", &mut s.content_type, &refs);
-        ui.end_row();
-        ui.label("Tone");
-        ui.add(egui::TextEdit::singleline(&mut s.tone).hint_text("optional: positive, critical…").desired_width(200.0));
-        ui.end_row();
+            if s.format == Format::Carousel {
+                ui.label("Slides");
+                ui.add(egui::Slider::new(&mut s.total_slides, 3..=10));
+                ui.end_row();
+            }
+            ui.label("Platform");
+            let plats: Vec<(&str, &str)> = planner::PLATFORMS.iter().map(|p| (p.0, p.1)).collect();
+            combo(ui, "press-plat", &mut s.platform, &plats);
+            ui.end_row();
+            ui.label("Content type");
+            let brand_types = s.cfg.as_ref().and_then(|c| c.brand(&s.brand)).map(|b| b.content_types.clone()).unwrap_or_default();
+            let mut types: Vec<(String, String)> = vec![("general".into(), "General".into())];
+            if brand_types.is_empty() {
+                types.extend(planner::CONTENT_TYPES.iter().skip(1).take(6).map(|c| (c.0.to_string(), c.1.to_string())));
+            } else {
+                types.extend(brand_types.iter().map(|c| (c.value.clone(), c.label.clone())));
+            }
+            let refs: Vec<(&str, &str)> = types.iter().map(|(a, b)| (a.as_str(), b.as_str())).collect();
+            combo(ui, "press-ctype", &mut s.content_type, &refs);
+            ui.end_row();
+            ui.label("Tone");
+            ui.add(egui::TextEdit::singleline(&mut s.tone).hint_text("optional: positive, critical…").desired_width(200.0));
+            ui.end_row();
+        });
+        ui.checkbox(&mut s.polish, "Brand-voice polish pass (slower)");
     });
-    ui.checkbox(&mut s.polish, "Brand-voice polish pass (slower)");
 }
 
 fn request(app: &PhotocraftApp, story: Story, manual: bool) -> Request {
     let s = &app.press;
-    Request { story, manual, total_slides: Some(s.total_slides), platform: s.platform.clone(), content_type: s.content_type.clone(), tone: s.tone.clone(), polish: s.polish }
+    Request {
+        story,
+        manual,
+        total_slides: Some(s.total_slides),
+        platform: s.platform.clone(),
+        content_type: s.content_type.clone(),
+        tone: s.tone.clone(),
+        polish: s.polish,
+    }
 }
 
 fn plan_with_ai(ai: &Backend, brand: &photocraft_press::Brand, req: &Request, fmt: Format) -> photocraft_studio::Result<Plan> {
@@ -565,15 +696,26 @@ fn plan_with_ai(ai: &Backend, brand: &photocraft_press::Brand, req: &Request, fm
 
 fn idea_ui(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
     let ctx = ui.ctx().clone();
-    section(ui, "Your idea");
-    ui.add(egui::TextEdit::singleline(&mut app.press.idea).hint_text("What is the post about?").desired_width(f32::INFINITY));
-    ui.add(egui::TextEdit::multiline(&mut app.press.notes).hint_text("Notes, facts, links — the AI uses only what you write here").desired_rows(5).desired_width(f32::INFINITY));
+    card(ui, |ui| {
+        section(ui, "Your idea");
+        ui.add(egui::TextEdit::singleline(&mut app.press.idea).hint_text("What is the post about?").desired_width(f32::INFINITY));
+        ui.add(
+            egui::TextEdit::multiline(&mut app.press.notes)
+                .hint_text("Notes, facts, links — the AI uses only what you write here")
+                .desired_rows(5)
+                .desired_width(f32::INFINITY),
+        );
+    });
     options_ui(app, ui);
     let ready = !app.press.idea.trim().is_empty() && !app.press.busy();
     ui.horizontal(|ui| {
-        if ui.add_enabled(ready, egui::Button::new("Write post with AI")).clicked() {
+        if primary(ui, ready, "Write post with AI") {
             let (Some(ai), Some(brand)) = (app.press.backend(), app.press.brand()) else { return };
-            let story = Story { title: app.press.idea.trim().into(), summary: if app.press.notes.trim().is_empty() { app.press.idea.trim().into() } else { app.press.notes.trim().into() }, ..Default::default() };
+            let story = Story {
+                title: app.press.idea.trim().into(),
+                summary: if app.press.notes.trim().is_empty() { app.press.idea.trim().into() } else { app.press.notes.trim().into() },
+                ..Default::default()
+            };
             let req = request(app, story, true);
             let fmt = app.press.format;
             spawn(app, &ctx, &format!("Writing with {}", ai.name()), move |r| {
@@ -654,7 +796,7 @@ fn stories_ui(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
         ui.label("stories");
     });
     ui.horizontal(|ui| {
-        if ui.add_enabled(!app.press.busy(), egui::Button::new("Fetch & score")).clicked() {
+        if primary(ui, !app.press.busy(), "Fetch & score") {
             let urls = cats.iter().find(|c| c.0 == app.press.category).map(|c| c.3.clone()).unwrap_or_default();
             let (Some(home), Some(ai)) = (app.press.home.clone(), app.press.backend()) else { return };
             let n = app.press.fetch_n;
@@ -692,7 +834,7 @@ fn stories_ui(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
     options_ui(app, ui);
     let n_picked = app.press.picked.iter().filter(|p| **p).count();
     ui.horizontal(|ui| {
-        if ui.add_enabled(n_picked > 0 && !app.press.busy(), egui::Button::new(format!("Generate {n_picked} selected → queue"))).clicked() {
+        if primary(ui, n_picked > 0 && !app.press.busy(), &format!("Generate {n_picked} selected → queue")) {
             let picked: Vec<Story> = app.press.stories.iter().zip(&app.press.picked).filter(|(_, p)| **p).map(|(s, _)| s.clone()).collect();
             let reqs: Vec<Request> = picked.into_iter().map(|s| request(app, s, false)).collect();
             batch(app, &ctx, reqs);
@@ -701,31 +843,32 @@ fn stories_ui(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
     });
     let mut edit = None;
     for (i, s) in app.press.stories.iter().enumerate() {
-        ui.separator();
-        ui.horizontal(|ui| {
-            if let Some(p) = app.press.picked.get_mut(i) {
-                ui.checkbox(p, "");
-            }
-            let score = s.score.map(|v| format!("{v}")).unwrap_or_else(|| "–".into());
-            let col = match s.score {
-                Some(v) if v >= 70 => Color32::from_rgb(90, 190, 120),
-                Some(v) if v >= 45 => Color32::from_rgb(220, 180, 70),
-                Some(_) => Color32::from_rgb(200, 100, 90),
-                None => Color32::GRAY,
-            };
-            ui.label(RichText::new(score).strong().color(col));
-            ui.vertical(|ui| {
-                ui.label(RichText::new(&s.title).strong());
-                ui.label(RichText::new(format!("{} · {}", s.source, s.reason)).small().weak());
-                ui.horizontal(|ui| {
-                    if ui.small_button("Make this post").clicked() {
-                        edit = Some(s.clone());
-                    }
-                    if !s.url.is_empty() {
-                        ui.hyperlink_to(RichText::new("source").small(), &s.url);
-                    }
+        card(ui, |ui| {
+            ui.horizontal(|ui| {
+                if let Some(p) = app.press.picked.get_mut(i) {
+                    ui.checkbox(p, "");
+                }
+                let score = s.score.map(|v| format!("{v}")).unwrap_or_else(|| "–".into());
+                let col = match s.score {
+                    Some(v) if v >= 70 => Color32::from_rgb(90, 190, 120),
+                    Some(v) if v >= 45 => Color32::from_rgb(220, 180, 70),
+                    Some(_) => Color32::from_rgb(200, 100, 90),
+                    None => Color32::GRAY,
+                };
+                ui.label(RichText::new(score).strong().color(col));
+                ui.vertical(|ui| {
+                    ui.label(RichText::new(&s.title).strong());
+                    ui.label(RichText::new(format!("{} · {}", s.source, s.reason)).small().weak());
+                    ui.horizontal(|ui| {
+                        if ui.small_button("Make this post").clicked() {
+                            edit = Some(s.clone());
+                        }
+                        if !s.url.is_empty() {
+                            ui.hyperlink_to(RichText::new("source").small(), &s.url);
+                        }
+                    });
                 });
-            });
+            })
         });
     }
     if let Some(story) = edit {
@@ -778,20 +921,26 @@ fn batch(app: &mut PhotocraftApp, ctx: &egui::Context, reqs: Vec<Request>) {
 
 /// Fetch a picture for every slide that has a query but no image (best effort).
 fn fill_images(home: &Home, env: &photocraft_studio::home::Env, source: &str, plan: &mut Plan, story_image: &str) {
-    if plan.image.is_empty() && !story_image.is_empty()
+    if plan.image.is_empty()
+        && !story_image.is_empty()
         && let Ok(p) = images::download(home, story_image, "feed", &plan.slug)
     {
         plan.image = p.to_string_lossy().replace('\\', "/");
     }
     for s in &mut plan.content_slides {
-        if s.image.is_empty() && !s.image_query.trim().is_empty()
+        if s.image.is_empty()
+            && !s.image_query.trim().is_empty()
             && let Ok(p) = images::fetch_for_query(home, env, source, &s.image_query)
         {
             s.image = p.to_string_lossy().replace('\\', "/");
         }
     }
     if plan.image.is_empty() {
-        let q = if plan.image_query.trim().is_empty() { plan.content_slides.first().map(|s| s.image_query.clone()).unwrap_or_default() } else { plan.image_query.clone() };
+        let q = if plan.image_query.trim().is_empty() {
+            plan.content_slides.first().map(|s| s.image_query.clone()).unwrap_or_default()
+        } else {
+            plan.image_query.clone()
+        };
         if !q.trim().is_empty()
             && let Ok(p) = images::fetch_for_query(home, env, source, &q)
         {
@@ -861,7 +1010,7 @@ fn sheet_ui(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
     {
         open_plan(app, photocraft_press::csv::to_plan(&p, &b, app.press.format.key()));
     }
-    if ui.add_enabled(!app.press.busy(), egui::Button::new(format!("Generate all {} → queue", app.press.csv_posts.len()))).clicked() {
+    if primary(ui, !app.press.busy(), &format!("Generate all {} → queue", app.press.csv_posts.len())) {
         let posts = app.press.csv_posts.clone();
         if app.press.csv_ai {
             let reqs = posts
@@ -960,14 +1109,21 @@ fn image_row(app: &mut PhotocraftApp, ui: &mut egui::Ui, slot: usize, query: &mu
             });
         }
         if ui.add_enabled(!app.press.busy(), egui::Button::new("File…").small()).clicked() {
-            let r = app.ask_file(crate::file_dialog::FileDialogRequest::Open { multiple: false, initial_dir: None, extensions: Some(vec!["png".into(), "jpg".into(), "jpeg".into(), "webp".into()]) }, move |app, a| {
-                if let crate::file_dialog::FileDialogAnswer::Paths(p) = a
-                    && let Some(p) = p.first()
-                {
-                    set_image(app, slot, p.replace('\\', "/"));
-                }
-                Ok(Value::Null)
-            });
+            let r = app.ask_file(
+                crate::file_dialog::FileDialogRequest::Open {
+                    multiple: false,
+                    initial_dir: None,
+                    extensions: Some(vec!["png".into(), "jpg".into(), "jpeg".into(), "webp".into()]),
+                },
+                move |app, a| {
+                    if let crate::file_dialog::FileDialogAnswer::Paths(p) = a
+                        && let Some(p) = p.first()
+                    {
+                        set_image(app, slot, p.replace('\\', "/"));
+                    }
+                    Ok(Value::Null)
+                },
+            );
             if let Err(e) = r
                 && e != "cancelled"
             {
@@ -998,7 +1154,14 @@ fn image_row(app: &mut PhotocraftApp, ui: &mut egui::Ui, slot: usize, query: &mu
     });
     if !image.is_empty() {
         let name = std::path::Path::new(image.as_str()).file_name().map(|f| f.to_string_lossy().to_string()).unwrap_or_default();
-        ui.label(RichText::new(format!("using {name}")).small().weak());
+        let ctx2 = ui.ctx().clone();
+        ui.horizontal(|ui| {
+            if let Some(tex) = thumb(app, &ctx2, std::path::Path::new(image.as_str())) {
+                let s = tex.size_vec2();
+                ui.add(egui::Image::new(&tex).fit_to_exact_size(s * (40.0 / s.y.max(1.0))).corner_radius(4.0));
+            }
+            ui.label(RichText::new(name).small().weak());
+        });
     }
 }
 
@@ -1041,7 +1204,7 @@ fn post_tab(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
     app.press.built = built_alive;
     ui.horizontal_wrapped(|ui| {
         let label = if app.press.built.is_empty() { "Build in PhotoCraft" } else { "Rebuild" };
-        if ui.add_enabled(!app.press.busy(), egui::Button::new(RichText::new(label).strong())).on_hover_text("Open every slide as an editable document").clicked() {
+        if primary(ui, !app.press.busy(), label) {
             let old = std::mem::take(&mut app.press.built);
             close_docs(app, &old);
             match build_docs(app, &plan, &brand, app.press.style) {
@@ -1072,43 +1235,46 @@ fn post_tab(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
             close_docs(app, &old);
         }
     });
-    ui.separator();
+    ui.add_space(6.0);
     let fmt = plan.format();
     let mut q0 = plan.image_query.clone();
     let mut i0 = plan.image.clone();
     match fmt {
         Format::Carousel => {
-            section(ui, "Title slide");
-            field(ui, "Headline", &mut plan.title_card.headline, false);
-            field(ui, "Subhead", &mut plan.title_card.subhead, true);
-            image_row(app, ui, 0, &mut q0, &mut i0);
+            card(ui, |ui| {
+                section(ui, "Slide 1 · Title");
+                field(ui, "Headline", &mut plan.title_card.headline, false);
+                field(ui, "Subhead", &mut plan.title_card.subhead, true);
+                image_row(app, ui, 0, &mut q0, &mut i0);
+            });
             let mut remove = None;
             let mut up = None;
             let n = plan.content_slides.len();
             for i in 0..n {
-                let Some(s) = plan.content_slides.get_mut(i) else { continue };
-                ui.separator();
-                ui.horizontal(|ui| {
-                    ui.label(RichText::new(format!("Slide {}", i + 2)).strong());
-                    if i > 0 && ui.small_button("↑").clicked() {
-                        up = Some(i);
-                    }
-                    if n > 1 && ui.small_button("Remove").clicked() {
-                        remove = Some(i);
+                card(ui, |ui| {
+                    let Some(s) = plan.content_slides.get_mut(i) else { return };
+                    ui.horizontal(|ui| {
+                        section(ui, &format!("Slide {} · Content", i + 2));
+                        if i > 0 && ui.small_button("↑").clicked() {
+                            up = Some(i);
+                        }
+                        if n > 1 && ui.small_button("Remove").clicked() {
+                            remove = Some(i);
+                        }
+                    });
+                    field(ui, "Heading", &mut s.heading, false);
+                    field(ui, "Body (— one point per line)", &mut s.body, true);
+                    let (mut q, mut im) = (s.image_query.clone(), s.image.clone());
+                    image_row(app, ui, i + 1, &mut q, &mut im);
+                    if let Some(s) = plan.content_slides.get_mut(i) {
+                        s.image_query = q;
+                        // A Find / File… / link result lands in app.press.plan, which is taken out
+                        // this frame: it is merged below.
+                        if s.image != im && im.is_empty() {
+                            s.image.clear();
+                        }
                     }
                 });
-                field(ui, "Heading", &mut s.heading, false);
-                field(ui, "Body (— one point per line)", &mut s.body, true);
-                let (mut q, mut im) = (s.image_query.clone(), s.image.clone());
-                image_row(app, ui, i + 1, &mut q, &mut im);
-                if let Some(s) = plan.content_slides.get_mut(i) {
-                    s.image_query = q;
-                    // A Find / File… / link result lands in app.press.plan, which is taken out
-                    // this frame: it is merged below.
-                    if s.image != im && im.is_empty() {
-                        s.image.clear();
-                    }
-                }
             }
             if let Some(i) = remove {
                 plan.content_slides.remove(i);
@@ -1119,10 +1285,11 @@ fn post_tab(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
             if plan.content_slides.len() < 8 && ui.button("+ Add slide").clicked() {
                 plan.content_slides.push(ContentSlide { heading: "NEW POINT".into(), body: "— ".into(), ..Default::default() });
             }
-            ui.separator();
-            section(ui, "Last slide");
-            field(ui, "Call to action", &mut plan.outro_card.cta, false);
-            field(ui, "DM keyword (optional)", &mut plan.dm_keyword, false);
+            card(ui, |ui| {
+                section(ui, "Last slide · Call to action");
+                field(ui, "Call to action", &mut plan.outro_card.cta, false);
+                field(ui, "DM keyword (optional)", &mut plan.dm_keyword, false);
+            });
         }
         Format::Quote => {
             section(ui, "Quote card");
@@ -1149,7 +1316,6 @@ fn post_tab(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
     if i0.is_empty() {
         plan.image.clear();
     }
-    ui.separator();
     section(ui, "Caption");
     ui.add(egui::TextEdit::multiline(&mut plan.caption).desired_rows(4).desired_width(f32::INFINITY));
     let mut tags = plan.hashtags.join(" ");
@@ -1255,6 +1421,7 @@ fn status_color(s: &str) -> Color32 {
         "pending" => Color32::from_rgb(220, 180, 70),
         "approved" => Color32::from_rgb(100, 160, 230),
         "scheduled" => Color32::from_rgb(160, 120, 230),
+        "cloud_scheduled" => Color32::from_rgb(0, 180, 200),
         "published" => Color32::from_rgb(90, 190, 120),
         "failed" => Color32::from_rgb(235, 90, 80),
         _ => Color32::GRAY,
@@ -1306,7 +1473,16 @@ fn set_status(app: &mut PhotocraftApp, id: &str, f: impl FnOnce(&mut Entry) -> R
 fn queue_tab(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
     let ctx = ui.ctx().clone();
     ui.horizontal_wrapped(|ui| {
-        for (k, l) in [("", "All"), ("pending", "To review"), ("approved", "Approved"), ("scheduled", "Scheduled"), ("published", "Published"), ("failed", "Failed"), ("rejected", "Rejected")] {
+        for (k, l) in [
+            ("", "All"),
+            ("pending", "To review"),
+            ("approved", "Approved"),
+            ("scheduled", "Scheduled"),
+            ("cloud_scheduled", "In cloud"),
+            ("published", "Published"),
+            ("failed", "Failed"),
+            ("rejected", "Rejected"),
+        ] {
             if ui.selectable_label(app.press.queue_filter == k, l).clicked() {
                 app.press.queue_filter = k.into();
             }
@@ -1315,10 +1491,22 @@ fn queue_tab(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
             app.press.refresh_queue();
             app.press.thumbs.clear();
         }
+        if cloud_ready(app)
+            && ui.add_enabled(!app.press.busy(), egui::Button::new("Sync cloud").small()).on_hover_text("Fetch the cloud's publishing results").clicked()
+        {
+            cloud_sync(app, &ctx);
+        }
     });
     let brand = app.press.brand.clone();
     let filter = app.press.queue_filter.clone();
-    let items: Vec<Entry> = app.press.queue.iter().filter(|e| library::s(e, "brand") == brand && (filter.is_empty() || library::s(e, "status") == filter)).take(60).cloned().collect();
+    let items: Vec<Entry> = app
+        .press
+        .queue
+        .iter()
+        .filter(|e| library::s(e, "brand") == brand && (filter.is_empty() || library::s(e, "status") == filter))
+        .take(60)
+        .cloned()
+        .collect();
     if items.is_empty() {
         ui.label("Nothing here for this brand.");
     }
@@ -1326,116 +1514,280 @@ fn queue_tab(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
     for e in items {
         let id = library::s(&e, "id").to_string();
         let status = library::s(&e, "status").to_string();
-        ui.separator();
-        ui.horizontal(|ui| {
-            let files = library::entry_files(&home, &e);
-            if let Some(first) = files.first()
-                && let Some(t) = thumb(app, &ctx, first)
-            {
-                let size = t.size_vec2();
-                let k = 72.0 / size.y.max(1.0);
-                if ui.add(egui::Image::new(&t).fit_to_exact_size(size * k).sense(egui::Sense::click())).on_hover_text("Open the slides in PhotoCraft").clicked() {
-                    let paths: Vec<String> = files.iter().map(|p| p.to_string_lossy().to_string()).collect();
-                    app.open_paths(&paths);
-                }
-            }
-            ui.vertical(|ui| {
-                ui.label(RichText::new(library::s(&e, "title")).strong());
-                ui.horizontal(|ui| {
-                    ui.label(RichText::new(&status).color(status_color(&status)).small());
-                    ui.label(RichText::new(format!("{} · {} slide(s)", library::s(&e, "format"), files.len())).small().weak());
-                });
-                let when = library::s(&e, "scheduled_at");
-                if !when.is_empty() {
-                    ui.label(RichText::new(format!("When: {}", when.replace('T', " "))).small());
-                }
-                if let Some(r) = e.get("blocked_reason").and_then(Value::as_str) {
-                    ui.label(RichText::new(format!("⚠ {r}")).small().color(Color32::from_rgb(220, 180, 70)));
-                }
-                if let Some(p) = e.get("publish") {
-                    for err in p.get("errors").and_then(Value::as_array).into_iter().flatten() {
-                        ui.label(RichText::new(format!("× {}: {}", err.get("platform").and_then(Value::as_str).unwrap_or(""), err.get("error").and_then(Value::as_str).unwrap_or(""))).small().color(Color32::from_rgb(235, 90, 80)));
+        card(ui, |ui| {
+            ui.horizontal(|ui| {
+                let files = library::entry_files(&home, &e);
+                if let Some(first) = files.first()
+                    && let Some(t) = thumb(app, &ctx, first)
+                {
+                    let size = t.size_vec2();
+                    let k = 72.0 / size.y.max(1.0);
+                    if ui
+                        .add(egui::Image::new(&t).fit_to_exact_size(size * k).sense(egui::Sense::click()))
+                        .on_hover_text("Open the slides in PhotoCraft")
+                        .clicked()
+                    {
+                        let paths: Vec<String> = files.iter().map(|p| p.to_string_lossy().to_string()).collect();
+                        app.open_paths(&paths);
                     }
-                    for r in p.get("results").and_then(Value::as_array).into_iter().flatten() {
-                        if let Some(link) = r.get("permalink").and_then(Value::as_str).filter(|l| !l.is_empty()) {
-                            ui.hyperlink_to(RichText::new(format!("{} →", r.get("platform").and_then(Value::as_str).unwrap_or("post"))).small(), link);
+                }
+                ui.vertical(|ui| {
+                    ui.label(RichText::new(library::s(&e, "title")).strong());
+                    ui.horizontal(|ui| {
+                        pill(ui, &status, status_color(&status));
+                        ui.label(RichText::new(format!("{} · {} slide(s)", library::s(&e, "format"), files.len())).small().weak());
+                    });
+                    let when = library::s(&e, "scheduled_at");
+                    if !when.is_empty() {
+                        ui.label(RichText::new(format!("When: {}", when.replace('T', " "))).small());
+                    }
+                    if let Some(c) = e.get("cloud").filter(|c| c.get("id").is_some()) {
+                        let g = |k: &str| c.get(k).and_then(Value::as_str).unwrap_or("").to_string();
+                        let stage = g("stage");
+                        ui.label(
+                            RichText::new(format!(
+                                "Cloud: {}{} · {}",
+                                g("status"),
+                                if stage.is_empty() { String::new() } else { format!(" ({stage})") },
+                                g("account")
+                            ))
+                            .small()
+                            .color(Color32::from_rgb(0, 180, 200)),
+                        );
+                        if !g("error").is_empty() {
+                            ui.label(RichText::new(format!("× {}", g("error"))).small().color(Color32::from_rgb(235, 90, 80)));
+                        }
+                    }
+                    if let Some(r) = e.get("blocked_reason").and_then(Value::as_str) {
+                        ui.label(RichText::new(format!("⚠ {r}")).small().color(Color32::from_rgb(220, 180, 70)));
+                    }
+                    if let Some(p) = e.get("publish") {
+                        for err in p.get("errors").and_then(Value::as_array).into_iter().flatten() {
+                            ui.label(
+                                RichText::new(format!(
+                                    "× {}: {}",
+                                    err.get("platform").and_then(Value::as_str).unwrap_or(""),
+                                    err.get("error").and_then(Value::as_str).unwrap_or("")
+                                ))
+                                .small()
+                                .color(Color32::from_rgb(235, 90, 80)),
+                            );
+                        }
+                        for r in p.get("results").and_then(Value::as_array).into_iter().flatten() {
+                            if let Some(link) = r.get("permalink").and_then(Value::as_str).filter(|l| !l.is_empty()) {
+                                ui.hyperlink_to(RichText::new(format!("{} →", r.get("platform").and_then(Value::as_str).unwrap_or("post"))).small(), link);
+                            }
+                        }
+                    }
+                });
+            });
+            ui.horizontal_wrapped(|ui| {
+                if status == "pending" {
+                    if ui.small_button("✔ Approve").clicked() {
+                        set_status(app, &id, |e| {
+                            e.insert("status".into(), json!("approved"));
+                            e.insert("approved_at".into(), json!(library::now_iso()));
+                            Ok(())
+                        });
+                    }
+                    if ui.small_button("× Reject").clicked() {
+                        set_status(app, &id, |e| {
+                            e.insert("status".into(), json!("rejected"));
+                            Ok(())
+                        });
+                    }
+                }
+                if let Some(plan) = library::entry_plan(&home, &e)
+                    && ui.small_button("Edit").on_hover_text("Open the post's plan to change and re-render it").clicked()
+                {
+                    open_plan(app, plan);
+                }
+                if matches!(status.as_str(), "approved" | "scheduled" | "failed" | "pending") {
+                    let slot = app
+                        .press
+                        .when
+                        .entry(id.clone())
+                        .or_insert_with(|| library::s(&e, "scheduled_at").chars().take(16).collect::<String>().replace('T', " "));
+                    ui.add(egui::TextEdit::singleline(slot).hint_text("YYYY-MM-DD HH:MM").desired_width(120.0));
+                    if ui.small_button("Next slot").clicked()
+                        && let Some(cfg) = &app.press.cfg
+                        && let Some(n) = schedule::next_slots(cfg, &app.press.queue, 1, schedule::now()).first()
+                    {
+                        *app.press.when.entry(id.clone()).or_default() = n.format("%Y-%m-%d %H:%M").to_string();
+                    }
+                    if ui.small_button("Schedule").clicked() {
+                        let v = app.press.when.get(&id).cloned().unwrap_or_default();
+                        match schedule::parse_when(&v) {
+                            Some(w) => set_status(app, &id, |e| {
+                                e.insert("status".into(), json!("scheduled"));
+                                e.insert("scheduled_at".into(), json!(schedule::iso(w)));
+                                if !e.contains_key("approved_at") {
+                                    e.insert("approved_at".into(), json!(library::now_iso()));
+                                }
+                                Ok(())
+                            }),
+                            None => app.press.error = "Type the time as YYYY-MM-DD HH:MM (or press Next slot).".into(),
+                        }
+                    }
+                    if cloud_ready(app)
+                        && ui
+                            .add_enabled(!app.press.busy(), egui::Button::new("Schedule in cloud").small())
+                            .on_hover_text("Upload to the cloud: it posts at this time even while the PC is off")
+                            .clicked()
+                    {
+                        let v = app.press.when.get(&id).cloned().unwrap_or_default();
+                        match schedule::parse_when(&v) {
+                            Some(w) if w > schedule::now() => cloud_schedule(app, &ctx, &id, Some(w)),
+                            Some(_) => app.press.error = "Choose a time in the future for the cloud.".into(),
+                            None => app.press.error = "Type the time as YYYY-MM-DD HH:MM (or press Next slot).".into(),
+                        }
+                    }
+                    if status == "scheduled" && ui.small_button("Unschedule").clicked() {
+                        set_status(app, &id, |e| {
+                            e.insert("status".into(), json!("approved"));
+                            e.remove("scheduled_at");
+                            Ok(())
+                        });
+                    }
+                }
+                let cloud_id = e.get("cloud").and_then(|c| c.get("id")).and_then(Value::as_str).map(str::to_string);
+                if status == "cloud_scheduled"
+                    && let Some(cid) = &cloud_id
+                {
+                    if ui.add_enabled(!app.press.busy(), egui::Button::new("Post now").small()).on_hover_text("Ask the cloud to publish it now").clicked() {
+                        cloud_action(app, &ctx, &id, cid, "publishNow");
+                    }
+                    if ui.add_enabled(!app.press.busy(), egui::Button::new("Cancel cloud schedule").small()).clicked() {
+                        cloud_action(app, &ctx, &id, cid, "cancelPost");
+                    }
+                } else if !matches!(status.as_str(), "published" | "rejected") {
+                    let cloud_key = format!("cloud:{id}");
+                    let direct_key = format!("direct:{id}");
+                    match app.press.confirm_publish.clone() {
+                        Some(k) if k == cloud_key || k == direct_key => {
+                            ui.label(RichText::new(if k == cloud_key { "Post to Instagram now via the cloud?" } else { "Publish now from this PC?" }).strong());
+                            if ui.small_button("Yes, post it").clicked() {
+                                app.press.confirm_publish = None;
+                                if k == cloud_key {
+                                    cloud_schedule(app, &ctx, &id, None);
+                                } else {
+                                    publish(app, &ctx, vec![id.clone()]);
+                                }
+                            }
+                            if ui.small_button("Cancel").clicked() {
+                                app.press.confirm_publish = None;
+                            }
+                        }
+                        _ => {
+                            if cloud_ready(app)
+                                && ui.small_button("Post now").on_hover_text("Upload to the cloud, which posts it to Instagram right away").clicked()
+                            {
+                                app.press.confirm_publish = Some(cloud_key);
+                            }
+                            let direct = if cloud_ready(app) { "Post directly" } else { "Publish now" };
+                            if ui
+                                .small_button(direct)
+                                .on_hover_text("Publish from this PC with the Meta token in .env (Instagram needs PUBLIC_BASE_URL)")
+                                .clicked()
+                            {
+                                app.press.confirm_publish = Some(direct_key);
+                            }
                         }
                     }
                 }
+                if ui.small_button("Files").on_hover_text("Show the files").clicked() {
+                    let dir = home.outputs().join(library::s(&e, "rel"));
+                    reveal(app, &ctx, &dir);
+                }
             });
         });
-        ui.horizontal_wrapped(|ui| {
-            if status == "pending" {
-                if ui.small_button("✔ Approve").clicked() {
-                    set_status(app, &id, |e| {
-                        e.insert("status".into(), json!("approved"));
-                        e.insert("approved_at".into(), json!(library::now_iso()));
-                        Ok(())
-                    });
-                }
-                if ui.small_button("× Reject").clicked() {
-                    set_status(app, &id, |e| {
-                        e.insert("status".into(), json!("rejected"));
-                        Ok(())
-                    });
-                }
-            }
-            if let Some(plan) = library::entry_plan(&home, &e)
-                && ui.small_button("Edit").on_hover_text("Open the post's plan to change and re-render it").clicked()
-            {
-                open_plan(app, plan);
-            }
-            if matches!(status.as_str(), "approved" | "scheduled" | "failed" | "pending") {
-                let slot = app.press.when.entry(id.clone()).or_insert_with(|| library::s(&e, "scheduled_at").chars().take(16).collect::<String>().replace('T', " "));
-                ui.add(egui::TextEdit::singleline(slot).hint_text("YYYY-MM-DD HH:MM").desired_width(120.0));
-                if ui.small_button("Next slot").clicked()
-                    && let Some(cfg) = &app.press.cfg
-                    && let Some(n) = schedule::next_slots(cfg, &app.press.queue, 1, schedule::now()).first()
-                {
-                    *app.press.when.entry(id.clone()).or_default() = n.format("%Y-%m-%d %H:%M").to_string();
-                }
-                if ui.small_button("Schedule").clicked() {
-                    let v = app.press.when.get(&id).cloned().unwrap_or_default();
-                    match schedule::parse_when(&v) {
-                        Some(w) => set_status(app, &id, |e| {
-                            e.insert("status".into(), json!("scheduled"));
-                            e.insert("scheduled_at".into(), json!(schedule::iso(w)));
-                            if !e.contains_key("approved_at") {
-                                e.insert("approved_at".into(), json!(library::now_iso()));
-                            }
-                            Ok(())
-                        }),
-                        None => app.press.error = "Type the time as YYYY-MM-DD HH:MM (or press Next slot).".into(),
-                    }
-                }
-                if status == "scheduled" && ui.small_button("Unschedule").clicked() {
-                    set_status(app, &id, |e| {
-                        e.insert("status".into(), json!("approved"));
-                        e.remove("scheduled_at");
-                        Ok(())
-                    });
-                }
-            }
-            if !matches!(status.as_str(), "published" | "rejected") {
-                if app.press.confirm_publish.as_deref() == Some(id.as_str()) {
-                    ui.label(RichText::new("Publish now?").strong());
-                    if ui.small_button("Yes, publish").clicked() {
-                        app.press.confirm_publish = None;
-                        publish(app, &ctx, vec![id.clone()]);
-                    }
-                    if ui.small_button("Cancel").clicked() {
-                        app.press.confirm_publish = None;
-                    }
-                } else if ui.small_button("Publish now").clicked() {
-                    app.press.confirm_publish = Some(id.clone());
-                }
-            }
-            if ui.small_button("Files").on_hover_text("Show the files").clicked() {
-                let dir = home.outputs().join(library::s(&e, "rel"));
-                reveal(app, &ctx, &dir);
-            }
-        });
     }
+}
+
+/// Cloud publishing is set up in `.env`.
+fn cloud_ready(app: &PhotocraftApp) -> bool {
+    app.press.home.as_ref().is_some_and(|h| cloud::configured(&h.env()))
+}
+
+/// Upload a post to the cloud and schedule it (`when` = None: post now). The idempotency key is
+/// saved on the entry even when this fails, so a retry continues the same reservation.
+fn cloud_schedule(app: &mut PhotocraftApp, ctx: &egui::Context, id: &str, when: Option<photocraft_studio::chrono::NaiveDateTime>) {
+    let (Some(home), Some(cfg)) = (app.press.home.clone(), app.press.cfg.clone()) else { return };
+    let picked = app.press.settings.cloud_accounts.clone();
+    let id = id.to_string();
+    spawn(app, ctx, if when.is_some() { "Scheduling in the cloud" } else { "Posting via the cloud" }, move |r| {
+        let env = home.env();
+        let res = (|| -> photocraft_studio::Result<String> {
+            let mut e = library::load_queue(&home)?
+                .into_iter()
+                .find(|e| library::s(e, "id") == id)
+                .ok_or_else(|| photocraft_studio::StudioError("the post is no longer in the queue".into()))?;
+            let brand = library::s(&e, "brand").to_string();
+            r.progress("signing in");
+            let list = cloud::accounts(&env)?;
+            let account = cloud::account_for(&cfg, &brand, picked.get(&brand).map(String::as_str), &list)
+                .cloned()
+                .ok_or_else(|| photocraft_studio::StudioError(format!("pick the cloud Instagram account for {brand} in Settings ▸ Cloud")))?;
+            r.progress(format!("uploading to @{}", account.name));
+            let out = cloud::schedule_entry(&home, &env, &mut e, &account, when);
+            let saved = e.clone();
+            library::update_entry(&home, &id, |x| {
+                *x = saved;
+                Ok(())
+            })?;
+            out?;
+            Ok(if when.is_some() {
+                format!("Scheduled in the cloud for @{}. It posts even if this PC is off.", account.name)
+            } else {
+                format!("Sent to the cloud: posting to @{} now.", account.name)
+            })
+        })();
+        r.apply(move |app| {
+            match res {
+                Ok(m) => app.press.status = m,
+                Err(e) => app.press.error = e.0,
+            }
+            app.press.refresh_queue();
+        });
+    });
+}
+
+fn cloud_action(app: &mut PhotocraftApp, ctx: &egui::Context, id: &str, cloud_id: &str, action: &'static str) {
+    let Some(home) = app.press.home.clone() else { return };
+    let (id, cid) = (id.to_string(), cloud_id.to_string());
+    spawn(app, ctx, if action == "cancelPost" { "Cancelling in the cloud" } else { "Posting now via the cloud" }, move |r| {
+        let env = home.env();
+        let res = (|| -> photocraft_studio::Result<()> {
+            let v = if action == "cancelPost" { cloud::cancel(&env, &cid)? } else { cloud::publish_now(&env, &cid)? };
+            library::update_entry(&home, &id, |e| {
+                cloud::apply_cloud_state(e, &v);
+                Ok(())
+            })?;
+            Ok(())
+        })();
+        r.apply(move |app| {
+            match res {
+                Ok(()) => app.press.status = if action == "cancelPost" { "Cloud schedule cancelled.".into() } else { "The cloud is posting it now.".into() },
+                Err(e) => app.press.error = e.0,
+            }
+            app.press.refresh_queue();
+        });
+    });
+}
+
+fn cloud_sync(app: &mut PhotocraftApp, ctx: &egui::Context) {
+    let Some(home) = app.press.home.clone() else { return };
+    spawn(app, ctx, "Syncing with the cloud", move |r| {
+        let res = cloud::sync(&home, &home.env());
+        r.apply(move |app| {
+            match res {
+                Ok(0) => app.press.status = "Cloud posts are up to date.".into(),
+                Ok(n) => app.press.status = format!("{n} post(s) updated from the cloud."),
+                Err(e) => app.press.error = e.0,
+            }
+            app.press.refresh_queue();
+        });
+    });
 }
 
 /// Show a folder in the system file manager.
@@ -1475,7 +1827,10 @@ fn publish(app: &mut PhotocraftApp, ctx: &egui::Context, ids: Vec<String>) {
             summary.push(if res.get("sent").and_then(Value::as_bool) == Some(true) {
                 format!("Published “{title}”.")
             } else {
-                format!("“{title}” not published: {}", res.get("reason").and_then(Value::as_str).map(str::to_string).or_else(|| res.get("errors").map(Value::to_string)).unwrap_or_default())
+                format!(
+                    "“{title}” not published: {}",
+                    res.get("reason").and_then(Value::as_str).map(str::to_string).or_else(|| res.get("errors").map(Value::to_string)).unwrap_or_default()
+                )
             });
         }
         r.apply(move |app| {
@@ -1500,7 +1855,8 @@ fn scheduler_tick(app: &mut PhotocraftApp, ctx: &egui::Context) {
         return;
     }
     let now = schedule::now();
-    let due: Vec<String> = library::load_queue(home).unwrap_or_default().iter().filter(|e| schedule::is_due(e, now)).map(|e| library::s(e, "id").to_string()).collect();
+    let due: Vec<String> =
+        library::load_queue(home).unwrap_or_default().iter().filter(|e| schedule::is_due(e, now)).map(|e| library::s(e, "id").to_string()).collect();
     if !due.is_empty() {
         publish(app, ctx, due);
     }
@@ -1531,7 +1887,8 @@ fn calendar_tab(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
         if library::s(e, "brand") != brand {
             continue;
         }
-        let when = schedule::parse_when(library::s(e, "scheduled_at")).or_else(|| if library::s(e, "status") == "published" { schedule::parse_when(library::s(e, "published_at")) } else { None });
+        let when = schedule::parse_when(library::s(e, "scheduled_at"))
+            .or_else(|| if library::s(e, "status") == "published" { schedule::parse_when(library::s(e, "published_at")) } else { None });
         if let Some(w) = when {
             by_day.entry(w.date()).or_default().push((w.format("%H:%M").to_string(), library::s(e, "title").to_string(), library::s(e, "status").to_string()));
         }
@@ -1547,10 +1904,17 @@ fn calendar_tab(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
             ui.vertical(|ui| {
                 ui.set_min_height(54.0);
                 let txt = RichText::new(day.day().to_string()).small();
-                let txt = if day == today { txt.strong().color(Color32::from_rgb(100, 160, 230)) } else if day.month() != m { txt.weak() } else { txt };
+                let txt = if day == today {
+                    txt.strong().color(Color32::from_rgb(100, 160, 230))
+                } else if day.month() != m {
+                    txt.weak()
+                } else {
+                    txt
+                };
                 ui.label(txt);
                 for (t, title, st) in by_day.get(&day).into_iter().flatten().take(3) {
-                    ui.label(RichText::new(format!("{t} {}", photocraft_press::text::clip(title, 14))).small().color(status_color(st))).on_hover_text(format!("{t} · {st}\n{title}"));
+                    ui.label(RichText::new(format!("{t} {}", photocraft_press::text::clip(title, 14))).small().color(status_color(st)))
+                        .on_hover_text(format!("{t} · {st}\n{title}"));
                 }
             });
             if i % 7 == 6 {
@@ -1559,7 +1923,13 @@ fn calendar_tab(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
         }
     });
     ui.separator();
-    let approved: Vec<String> = app.press.queue.iter().filter(|e| library::s(e, "brand") == brand && library::s(e, "status") == "approved").map(|e| library::s(e, "id").to_string()).collect();
+    let approved: Vec<String> = app
+        .press
+        .queue
+        .iter()
+        .filter(|e| library::s(e, "brand") == brand && library::s(e, "status") == "approved")
+        .map(|e| library::s(e, "id").to_string())
+        .collect();
     if ui.add_enabled(!approved.is_empty(), egui::Button::new(format!("Fill free slots with {} approved post(s)", approved.len()))).clicked()
         && let (Some(home), Some(cfg)) = (app.press.home.clone(), app.press.cfg.clone())
     {
@@ -1649,9 +2019,14 @@ fn settings_tab(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
             ui.label(RichText::new(format!("{key} is not set in .env")).small().color(Color32::from_rgb(220, 180, 70)));
         }
     }
+    cloud_settings(app, ui);
     section(ui, "Publishing");
     let mut sched = app.press.settings.run_scheduler;
-    if ui.checkbox(&mut sched, "Run the scheduler here (publish due calendar posts)").on_hover_text("Leave off while the K2 Press web app's scheduler is running, so a post is never sent by both.").changed() {
+    if ui
+        .checkbox(&mut sched, "Run the scheduler here (publish due calendar posts)")
+        .on_hover_text("Leave off while the K2 Press web app's scheduler is running, so a post is never sent by both.")
+        .changed()
+    {
         app.press.settings.run_scheduler = sched;
         let _ = app.press.settings.save();
     }
@@ -1659,7 +2034,11 @@ fn settings_tab(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
         let env = home.env();
         for (k, what) in [("META_ACCESS_TOKEN", "Meta token"), ("PUBLIC_BASE_URL", "Public URL for Instagram images")] {
             let ok = env.get(k).is_some();
-            ui.label(RichText::new(format!("{} {what} ({k})", if ok { "✔" } else { "×" })).small().color(if ok { Color32::from_rgb(90, 190, 120) } else { Color32::from_rgb(220, 180, 70) }));
+            ui.label(RichText::new(format!("{} {what} ({k})", if ok { "✔" } else { "×" })).small().color(if ok {
+                Color32::from_rgb(90, 190, 120)
+            } else {
+                Color32::from_rgb(220, 180, 70)
+            }));
         }
     }
     if ui.add_enabled(!app.press.busy(), egui::Button::new("Test the connection for this brand")).clicked()
@@ -1679,6 +2058,70 @@ fn settings_tab(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
     if !app.press.verify_text.is_empty() {
         ui.label(RichText::new(&app.press.verify_text).small());
     }
+}
+
+fn cloud_settings(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
+    let ctx = ui.ctx().clone();
+    let Some(home) = app.press.home.clone() else { return };
+    let env = home.env();
+    card(ui, |ui| {
+        section(ui, "Cloud (Supabase)");
+        ui.label(
+            RichText::new("Schedules and \"Post now\" run on the Shorts Factory cloud backend: posts go out while this PC is off, and Instagram needs no public URL from you.")
+                .small()
+                .weak(),
+        );
+        let missing = cloud::missing(&env);
+        if !missing.is_empty() {
+            ui.label(RichText::new(format!("Add to the K2 Press .env: {}", missing.join(", "))).small().color(Color32::from_rgb(220, 180, 70)));
+            return;
+        }
+        ui.horizontal(|ui| {
+            if ui.add_enabled(!app.press.busy(), egui::Button::new("Load Instagram accounts")).clicked() {
+                let env = env.clone();
+                spawn(app, &ctx, "Signing in to the cloud", move |r| {
+                    let res = cloud::accounts(&env);
+                    r.apply(move |app| match res {
+                        Ok(list) => {
+                            app.press.status = format!("{} cloud Instagram account(s).", list.len());
+                            app.press.cloud_accounts = list;
+                        }
+                        Err(e) => app.press.error = e.0,
+                    });
+                });
+            }
+            if ui.add_enabled(!app.press.busy(), egui::Button::new("Sync cloud")).clicked() {
+                cloud_sync(app, &ctx);
+            }
+        });
+        let list = app.press.cloud_accounts.clone();
+        if list.is_empty() {
+            return;
+        }
+        let Some(cfg) = app.press.cfg.clone() else { return };
+        let mut changed = false;
+        egui::Grid::new("press-cloud-accounts").num_columns(2).spacing([8.0, 6.0]).show(ui, |ui| {
+            for b in &cfg.brands {
+                ui.label(&b.name);
+                let picked = app.press.settings.cloud_accounts.get(&b.key).cloned();
+                let current = cloud::account_for(&cfg, &b.key, picked.as_deref(), &list)
+                    .map(|a| format!("@{} ({})", a.name, a.status))
+                    .unwrap_or_else(|| "choose…".into());
+                egui::ComboBox::from_id_salt(("press-cloud", b.key.as_str())).selected_text(current).width(200.0).show_ui(ui, |ui| {
+                    for a in &list {
+                        if ui.selectable_label(picked.as_deref() == Some(a.id.as_str()), format!("@{} ({})", a.name, a.status)).clicked() {
+                            app.press.settings.cloud_accounts.insert(b.key.clone(), a.id.clone());
+                            changed = true;
+                        }
+                    }
+                });
+                ui.end_row();
+            }
+        });
+        if changed {
+            let _ = app.press.settings.save();
+        }
+    });
 }
 
 fn apply_home(app: &mut PhotocraftApp) {
@@ -1707,7 +2150,10 @@ mod tests {
     #[test]
     fn built_and_closed_slides_keep_one_view_per_document() {
         let mut app = app();
-        let plan = Plan::from_json(&json!({"title_card": {"headline": "Hello"}, "content_slides": [{"heading": "A", "body": "— b"}], "outro_card": {"cta": "Follow"}})).unwrap();
+        let plan = Plan::from_json(
+            &json!({"title_card": {"headline": "Hello"}, "content_slides": [{"heading": "A", "body": "— b"}], "outro_card": {"cta": "Follow"}}),
+        )
+        .unwrap();
         let (docs, warnings) = build_docs(&mut app, &plan, "nobody", None).unwrap();
         assert!(warnings.is_empty(), "{warnings:?}");
         assert_eq!(docs.len(), 3);

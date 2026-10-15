@@ -94,7 +94,8 @@ fn json_cleanup() {
 fn queue_round_trip_keeps_unknown_fields() {
     let home = temp_home(CONFIG);
     std::fs::write(home.library().join("review_queue.json"), r#"[{"id":"old","status":"pending","weird":{"x":1}}]"#).unwrap();
-    let plan = photocraft_press::Plan::from_json(&json!({"title_card": {"headline": "Hello"}, "caption": "c", "hashtags": ["t"], "source_url": "https://s/1"})).unwrap();
+    let plan = photocraft_press::Plan::from_json(&json!({"title_card": {"headline": "Hello"}, "caption": "c", "hashtags": ["t"], "source_url": "https://s/1"}))
+        .unwrap();
     let (rel, dir) = library::new_output_dir(&home, "k2", "hello", "carousel").unwrap();
     assert!(dir.is_dir());
     let (rel2, _) = library::new_output_dir(&home, "k2", "hello", "carousel").unwrap();
@@ -182,7 +183,8 @@ fn publish_without_setup_keeps_the_slot() {
     let env = crate::home::Env::default();
     std::fs::create_dir_all(home.outputs().join("k2/p")).unwrap();
     std::fs::write(home.outputs().join("k2/p/01.png"), b"\x89PNG").unwrap();
-    let mut e: library::Entry = serde_json::from_value(json!({"id": "1", "brand": "k2", "rel": "k2/p", "files": ["01.png"], "status": "scheduled", "format": "square"})).unwrap();
+    let mut e: library::Entry =
+        serde_json::from_value(json!({"id": "1", "brand": "k2", "rel": "k2/p", "files": ["01.png"], "status": "scheduled", "format": "square"})).unwrap();
     let r = crate::meta::publish_entry(&home, &cfg, &env, &mut e);
     assert_eq!(r["sent"], false);
     assert!(r["reason"].as_str().unwrap().contains("META_ACCESS_TOKEN"));
@@ -208,4 +210,78 @@ fn real_home() {
     let q = library::load_queue(&home).unwrap();
     eprintln!("queue: {} entries; backend: {}", q.len(), Backend::resolve(&cfg, &home.env(), &Settings::default()).name());
     eprintln!("next slots: {:?}", next_slots(&cfg, &q, 3, crate::schedule::now()));
+}
+
+#[test]
+fn cloud_media_kinds() {
+    use crate::cloud::media_kind;
+    assert_eq!(media_kind("story", 1).unwrap(), "story");
+    assert_eq!(media_kind("square", 1).unwrap(), "image");
+    assert_eq!(media_kind("carousel", 4).unwrap(), "carousel");
+    assert!(media_kind("carousel", 11).is_err());
+    assert!(media_kind("story", 2).is_err());
+    assert!(media_kind("carousel", 0).is_err());
+}
+
+#[test]
+fn cloud_upload_targets_must_be_the_reserved_object() {
+    use crate::cloud::valid_upload_target as ok;
+    let key = "reels/a/p/01-x.jpg";
+    assert!(ok(
+        &format!("https://s3.us-west-004.backblazeb2.com/bucket/{key}?X-Amz-Algorithm=AWS4-HMAC-SHA256&x=1"),
+        "https://p.supabase.co",
+        "b2",
+        "bucket",
+        key
+    ));
+    assert!(!ok(&format!("https://s3.us-west-004.backblazeb2.com/other/{key}?X-Amz-Algorithm=AWS4-HMAC-SHA256"), "https://p.supabase.co", "b2", "bucket", key));
+    assert!(!ok(&format!("http://s3.us-west-004.backblazeb2.com/bucket/{key}?X-Amz-Algorithm=AWS4-HMAC-SHA256"), "https://p.supabase.co", "b2", "bucket", key));
+    assert!(!ok(&format!("https://evil.com@s3.x.backblazeb2.com/bucket/{key}?X-Amz-Algorithm=AWS4-HMAC-SHA256"), "https://p.supabase.co", "b2", "bucket", key));
+    assert!(ok(&format!("https://p.supabase.co/storage/v1/object/upload/sign/reels/{key}?token=t"), "https://p.supabase.co", "supabase", "reels", key));
+    assert!(!ok(&format!("https://q.supabase.co/storage/v1/object/upload/sign/reels/{key}?token=t"), "https://p.supabase.co", "supabase", "reels", key));
+}
+
+#[test]
+fn cloud_slides_become_rgb_jpegs() {
+    let dir = std::env::temp_dir().join(format!("cloud-jpg-{}", rand_suffix()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let rgba = photocraft_codecs::Image::new(4, 3, photocraft_codecs::ChannelLayout::Rgba, photocraft_codecs::SampleType::U8).unwrap();
+    let png = photocraft_codecs::encode(&rgba, photocraft_codecs::Format::Png, &Default::default()).unwrap();
+    std::fs::write(dir.join("a.png"), png).unwrap();
+    let n = crate::cloud::to_jpeg(&dir.join("a.png"), &dir.join("cloud/01.jpg")).unwrap();
+    let bytes = std::fs::read(dir.join("cloud/01.jpg")).unwrap();
+    assert_eq!(n as usize, bytes.len());
+    assert!(bytes.starts_with(&[0xFF, 0xD8, 0xFF]));
+    assert!(crate::cloud::to_jpeg(&dir.join("missing.png"), &dir.join("x.jpg")).is_err());
+}
+
+#[test]
+fn cloud_state_lands_on_the_queue_entry() {
+    let mut e: library::Entry = serde_json::from_value(json!({"id": "1", "status": "cloud_scheduled", "cloud": {"id": "c1"}})).unwrap();
+    let published = json!({"post": {"id": "c1", "status": "published", "instagram_permalink": "https://instagram.com/p/x", "instagram_media_id": "9", "processing_stage": "complete"}});
+    assert!(crate::cloud::apply_cloud_state(&mut e, &published));
+    assert_eq!(library::s(&e, "status"), "published");
+    assert_eq!(e["publish"]["results"][0]["permalink"], "https://instagram.com/p/x");
+    assert!(!crate::cloud::apply_cloud_state(&mut e, &published), "no change the second time");
+    let failed = json!({"post": {"id": "c1", "status": "failed", "last_error": "Instagram rejected"}});
+    crate::cloud::apply_cloud_state(&mut e, &failed);
+    assert_eq!(library::s(&e, "status"), "failed");
+    let cancelled = json!({"post": {"id": "c1", "status": "cancelled"}});
+    crate::cloud::apply_cloud_state(&mut e, &cancelled);
+    assert_eq!(library::s(&e, "status"), "approved");
+}
+
+#[test]
+fn cloud_account_matching() {
+    use crate::cloud::{Account, account_for};
+    let home = temp_home(CONFIG);
+    let cfg = Config::load(&home).unwrap();
+    let a = |id: &str, ig: &str| Account { id: id.into(), instagram_user_id: ig.into(), name: id.into(), status: String::new(), expires: String::new() };
+    let list = vec![a("x", "999"), a("y", "123")];
+    assert_eq!(account_for(&cfg, "k2", None, &list).unwrap().id, "y", "matched by meta.accounts.k2.ig_user_id");
+    assert_eq!(account_for(&cfg, "k2", Some("x"), &list).unwrap().id, "x", "the Settings pick wins");
+    assert!(account_for(&cfg, "jkr", None, &list).is_none(), "ambiguous without a match");
+    assert_eq!(account_for(&cfg, "jkr", None, &list[..1]).unwrap().id, "x", "the only account");
+    assert!(!crate::cloud::configured(&crate::home::Env::default()));
+    assert!(crate::cloud::local_iso(parse_when("2026-10-15T09:00").unwrap()).unwrap().starts_with("2026-10-15T09:00:00"));
 }

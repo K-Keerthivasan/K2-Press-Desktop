@@ -7,8 +7,8 @@
 //!    everything in `<exe dir>/PhotoCraftData`, so a portable copy on a USB stick leaves nothing in
 //!    `%APPDATA%`. The Windows portable zip ships with `portable.txt`; the MSI doesn't. If that
 //!    folder can't be written (read-only medium, Program Files), the app warns and falls back.
-//! 3. The platform convention: macOS `~/Library/Application Support/Photocraft`, Windows
-//!    `%APPDATA%\Photocraft`, Linux `$XDG_CONFIG_HOME/photocraft` or `~/.config/photocraft`.
+//! 3. The platform convention: macOS `~/Library/Application Support/K2 Press Desktop`, Windows
+//!    `%APPDATA%\K2 Press Desktop`, Linux `$XDG_CONFIG_HOME/k2-press-desktop` or `~/.config/k2-press-desktop`.
 
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
@@ -85,12 +85,12 @@ pub fn resolve(env: impl Fn(&str) -> Option<OsString>, exe_dir: Option<&Path>) -
 pub fn platform_dir(env: &impl Fn(&str) -> Option<OsString>) -> Option<PathBuf> {
     let home = env("HOME").filter(|h| !h.is_empty()).map(PathBuf::from);
     if cfg!(target_os = "macos") {
-        return home.map(|h| h.join("Library/Application Support/Photocraft"));
+        return home.map(|h| h.join("Library/Application Support/K2 Press Desktop"));
     }
     if cfg!(windows) {
-        return env("APPDATA").filter(|a| !a.is_empty()).map(|a| PathBuf::from(a).join("Photocraft"));
+        return env("APPDATA").filter(|a| !a.is_empty()).map(|a| PathBuf::from(a).join("K2 Press Desktop"));
     }
-    env("XDG_CONFIG_HOME").filter(|x| !x.is_empty()).map(PathBuf::from).or_else(|| home.map(|h| h.join(".config"))).map(|c| c.join("photocraft"))
+    env("XDG_CONFIG_HOME").filter(|x| !x.is_empty()).map(PathBuf::from).or_else(|| home.map(|h| h.join(".config"))).map(|c| c.join("k2-press-desktop"))
 }
 
 /// The first portable marker file in `exe_dir`, if any.
@@ -149,11 +149,11 @@ mod tests {
         assert!(!exe.join(PORTABLE_DATA_DIR).exists(), "no portable folder without a marker");
         // The convention per platform.
         if cfg!(target_os = "macos") {
-            assert_eq!(dir, root.join("home/Library/Application Support/Photocraft"));
+            assert_eq!(dir, root.join("home/Library/Application Support/K2 Press Desktop"));
         } else if cfg!(windows) {
-            assert_eq!(dir, root.join("appdata").join("Photocraft"));
+            assert_eq!(dir, root.join("appdata").join("K2 Press Desktop"));
         } else {
-            assert_eq!(dir, root.join("home/.config/photocraft"));
+            assert_eq!(dir, root.join("home/.config/k2-press-desktop"));
         }
         let _ = std::fs::remove_dir_all(&root);
     }

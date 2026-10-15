@@ -117,8 +117,16 @@ fn preview() {
     p["content_slides"][0]["image"] = json!(img);
     p["quote"] = json!("The best interface is the one your customer never notices.");
     p["subhead"] = json!("Jakob Nielsen");
-    for (style, b) in [("classic", json!({"name": "K2 Digital Media", "handle": "@k2digitalmedia_", "tagline": "The complete online presence for local business", "website": "k2digitalmedia.ca", "services": "Web · Video · Marketing · IT", "logo": logo, "category": "WEB DEVELOPMENT"})),
-                       ("imageForward", json!({"name": "JKR", "handle": "@jkr_studio_", "category": "GAMING", "image_forward": true, "theme": {"navy": "#0B0B0F", "navy2": "#141418", "accent": "#ED1C24", "accent2": "#FF5A4D", "text": "#FFFFFF"}}))] {
+    for (style, b) in [
+        (
+            "classic",
+            json!({"name": "K2 Digital Media", "handle": "@k2digitalmedia_", "tagline": "The complete online presence for local business", "website": "k2digitalmedia.ca", "services": "Web · Video · Marketing · IT", "logo": logo, "category": "WEB DEVELOPMENT"}),
+        ),
+        (
+            "imageForward",
+            json!({"name": "JKR", "handle": "@jkr_studio_", "category": "GAMING", "image_forward": true, "theme": {"navy": "#0B0B0F", "navy2": "#141418", "accent": "#ED1C24", "accent2": "#FF5A4D", "text": "#FFFFFF"}}),
+        ),
+    ] {
         for f in ["carousel", "square", "story", "x", "quote", "cover"] {
             let mut s = Session::new();
             let r = s.execute("press.build", json!({"plan": p, "brand": b, "format": f, "style": style})).unwrap();

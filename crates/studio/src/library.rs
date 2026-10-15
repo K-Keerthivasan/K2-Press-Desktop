@@ -165,7 +165,11 @@ pub fn list_plans(home: &Home, brand: &str) -> Vec<(PathBuf, String)> {
         .filter_map(|e| {
             let p = e.path();
             let t = e.metadata().and_then(|m| m.modified()).unwrap_or(std::time::UNIX_EPOCH);
-            let title = std::fs::read_to_string(&p).ok().and_then(|t| serde_json::from_str::<Value>(&t).ok()).and_then(|v| photocraft_press::Plan::from_json(v.get("plan").unwrap_or(&v)).ok()).map(|pl| pl.title().to_string())?;
+            let title = std::fs::read_to_string(&p)
+                .ok()
+                .and_then(|t| serde_json::from_str::<Value>(&t).ok())
+                .and_then(|v| photocraft_press::Plan::from_json(v.get("plan").unwrap_or(&v)).ok())
+                .map(|pl| pl.title().to_string())?;
             Some((p, title, t))
         })
         .collect();
@@ -194,7 +198,12 @@ pub fn load_plan(path: &std::path::Path) -> Result<photocraft_press::Plan> {
 // ── Seen stories ─────────────────────────────────────────────────────────────
 
 pub fn used_urls(home: &Home) -> BTreeSet<String> {
-    std::fs::read_to_string(home.library().join("used_urls.json")).ok().and_then(|t| serde_json::from_str::<Vec<String>>(&t).ok()).unwrap_or_default().into_iter().collect()
+    std::fs::read_to_string(home.library().join("used_urls.json"))
+        .ok()
+        .and_then(|t| serde_json::from_str::<Vec<String>>(&t).ok())
+        .unwrap_or_default()
+        .into_iter()
+        .collect()
 }
 
 pub fn mark_used(home: &Home, url: &str) -> Result<()> {

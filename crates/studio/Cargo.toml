@@ -25,3 +25,7 @@ roxmltree = "0.20"
 chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
 # HTTPS for the Graph API, Pexels / Unsplash and a local Ollama; rustls, no system OpenSSL.
 ureq = { version = "2", default-features = false, features = ["tls", "json"] }
+# Slides are re-encoded as JPEG for Instagram (cloud publishing).
+photocraft-codecs = { workspace = true }
+# The local IANA time zone the cloud schedules in (already in the tree through chrono).
+iana-time-zone = "0.1"

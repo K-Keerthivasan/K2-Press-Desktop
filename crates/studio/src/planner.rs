@@ -9,32 +9,132 @@ use crate::llm::Backend;
 use crate::{Result, StudioError};
 
 pub const PLATFORMS: &[(&str, &str, &str, usize, &str)] = &[
-    ("instagram", "Instagram", "3-4 concise sentences with a strong opening line", 10, "Make every slide highly visual and easy to scan on a phone. Use short, punchy copy and a save, share, follow, or DM call to action."),
-    ("linkedin", "LinkedIn", "4-7 short, professional paragraphs with generous line breaks", 3, "Write for a professional audience. Prioritise credible insight, business relevance, and a useful takeaway; avoid Instagram-style hype and engagement bait."),
-    ("facebook", "Facebook", "2-4 conversational paragraphs that provide enough context on their own", 3, "Use approachable, community-friendly language. Make the post understandable without swiping first and favour a natural question or discussion prompt when appropriate."),
-    ("x", "X", "one sharp post under 240 characters", 2, "Be exceptionally concise and direct. Keep graphic copy sparse, lead with the strongest claim, and avoid filler, long setup, and more than one call to action."),
+    (
+        "instagram",
+        "Instagram",
+        "3-4 concise sentences with a strong opening line",
+        10,
+        "Make every slide highly visual and easy to scan on a phone. Use short, punchy copy and a save, share, follow, or DM call to action.",
+    ),
+    (
+        "linkedin",
+        "LinkedIn",
+        "4-7 short, professional paragraphs with generous line breaks",
+        3,
+        "Write for a professional audience. Prioritise credible insight, business relevance, and a useful takeaway; avoid Instagram-style hype and engagement bait.",
+    ),
+    (
+        "facebook",
+        "Facebook",
+        "2-4 conversational paragraphs that provide enough context on their own",
+        3,
+        "Use approachable, community-friendly language. Make the post understandable without swiping first and favour a natural question or discussion prompt when appropriate.",
+    ),
+    (
+        "x",
+        "X",
+        "one sharp post under 240 characters",
+        2,
+        "Be exceptionally concise and direct. Keep graphic copy sparse, lead with the strongest claim, and avoid filler, long setup, and more than one call to action.",
+    ),
 ];
 
 pub const CONTENT_TYPES: &[(&str, &str, &str)] = &[
-    ("general", "General", "Choose the clearest, most useful framing for the supplied material. Preserve its core meaning and do not force it into a promotional, opinion, or tutorial structure."),
-    ("educational", "Educational / how-to", "Teach something practical. Organise the post into clear steps, principles, or mistakes, and make every slide give the reader an actionable takeaway."),
-    ("thought_leadership", "Thought leadership / opinion", "Express a clear, defensible point of view. Explain why it matters, support it with the provided facts, and end with a useful implication for the audience."),
-    ("promotional", "Promotional / offer", "Present the offer through audience benefits and a concrete problem it solves. Do not invent features, proof, pricing, urgency, or results; use one direct conversion-focused CTA."),
-    ("announcement", "Announcement / update", "Lead with what is new, then explain who it affects, why it matters, and what the audience should do next. Keep the news clear instead of teasing it."),
-    ("case_study", "Case study / results", "Structure the story as problem, approach, and result or lesson. Use only outcomes present in the supplied notes and never fabricate client names, metrics, quotes, or evidence."),
-    ("storytelling", "Storytelling / lesson", "Build a concise narrative with a hook, tension or turning point, and a useful lesson. Keep the story grounded in the supplied information rather than inventing anecdotes."),
-    ("business_tip", "Business tip / how-to", "Teach a practical lesson for a busy local business owner. Connect every recommendation to a concrete outcome such as leads, trust, speed, rankings, bookings, retention, or saved spend."),
-    ("service_spotlight", "Service spotlight / offer", "Explain the audience problem first, then show how the relevant service solves it and what business benefit it creates. Do not invent features, pricing, proof, urgency, or results."),
-    ("industry_insight", "Industry insight / trend", "Interpret the trend instead of merely reporting it. Explain what it changes for small and mid-sized businesses and give a practical next step."),
-    ("project_showcase", "Project showcase / portfolio", "Show the work through its goal, the reasoning or craft behind it, and the value delivered. Use only project details and outcomes supplied by the user."),
-    ("company_announcement", "Company announcement / update", "Lead clearly with the update, then explain who it affects, why it matters, and the one next action. Avoid inflated milestone language."),
-    ("breaking_news", "Breaking news / update", "Lead with what happened, then quickly explain why it matters to players or viewers. Separate confirmed facts from rumours and do not bury the news behind a tease."),
-    ("review", "Review / verdict", "Give a clear verdict supported by specific strengths, weaknesses, and audience fit. Do not invent hands-on experience, scores, quotes, or details not supplied by the user."),
-    ("reaction", "Reaction / hot take", "Take a confident fan-first position, identify the stakes, and support the reaction with concrete reasoning. Be punchy without manufacturing outrage or hype."),
-    ("trailer_breakdown", "Trailer / reveal breakdown", "Pull out the most important reveals, details, and implications in a logical order. Clearly mark interpretation or speculation and avoid presenting theories as confirmed facts."),
-    ("ranking", "Ranking / list", "Create a punchy ranked or curated list. Give a distinct, specific reason for every choice and make the ranking criteria clear."),
-    ("explainer", "Explainer / lore", "Make the subject easy for fans to follow by clarifying the essential context, connections, and takeaway without turning the post into a dry encyclopedia summary."),
-    ("recommendation", "Recommendation / what to play or watch", "Recommend what to play or watch, explain exactly why, identify who it best suits, and mention any relevant caveat supported by the supplied information."),
+    (
+        "general",
+        "General",
+        "Choose the clearest, most useful framing for the supplied material. Preserve its core meaning and do not force it into a promotional, opinion, or tutorial structure.",
+    ),
+    (
+        "educational",
+        "Educational / how-to",
+        "Teach something practical. Organise the post into clear steps, principles, or mistakes, and make every slide give the reader an actionable takeaway.",
+    ),
+    (
+        "thought_leadership",
+        "Thought leadership / opinion",
+        "Express a clear, defensible point of view. Explain why it matters, support it with the provided facts, and end with a useful implication for the audience.",
+    ),
+    (
+        "promotional",
+        "Promotional / offer",
+        "Present the offer through audience benefits and a concrete problem it solves. Do not invent features, proof, pricing, urgency, or results; use one direct conversion-focused CTA.",
+    ),
+    (
+        "announcement",
+        "Announcement / update",
+        "Lead with what is new, then explain who it affects, why it matters, and what the audience should do next. Keep the news clear instead of teasing it.",
+    ),
+    (
+        "case_study",
+        "Case study / results",
+        "Structure the story as problem, approach, and result or lesson. Use only outcomes present in the supplied notes and never fabricate client names, metrics, quotes, or evidence.",
+    ),
+    (
+        "storytelling",
+        "Storytelling / lesson",
+        "Build a concise narrative with a hook, tension or turning point, and a useful lesson. Keep the story grounded in the supplied information rather than inventing anecdotes.",
+    ),
+    (
+        "business_tip",
+        "Business tip / how-to",
+        "Teach a practical lesson for a busy local business owner. Connect every recommendation to a concrete outcome such as leads, trust, speed, rankings, bookings, retention, or saved spend.",
+    ),
+    (
+        "service_spotlight",
+        "Service spotlight / offer",
+        "Explain the audience problem first, then show how the relevant service solves it and what business benefit it creates. Do not invent features, pricing, proof, urgency, or results.",
+    ),
+    (
+        "industry_insight",
+        "Industry insight / trend",
+        "Interpret the trend instead of merely reporting it. Explain what it changes for small and mid-sized businesses and give a practical next step.",
+    ),
+    (
+        "project_showcase",
+        "Project showcase / portfolio",
+        "Show the work through its goal, the reasoning or craft behind it, and the value delivered. Use only project details and outcomes supplied by the user.",
+    ),
+    (
+        "company_announcement",
+        "Company announcement / update",
+        "Lead clearly with the update, then explain who it affects, why it matters, and the one next action. Avoid inflated milestone language.",
+    ),
+    (
+        "breaking_news",
+        "Breaking news / update",
+        "Lead with what happened, then quickly explain why it matters to players or viewers. Separate confirmed facts from rumours and do not bury the news behind a tease.",
+    ),
+    (
+        "review",
+        "Review / verdict",
+        "Give a clear verdict supported by specific strengths, weaknesses, and audience fit. Do not invent hands-on experience, scores, quotes, or details not supplied by the user.",
+    ),
+    (
+        "reaction",
+        "Reaction / hot take",
+        "Take a confident fan-first position, identify the stakes, and support the reaction with concrete reasoning. Be punchy without manufacturing outrage or hype.",
+    ),
+    (
+        "trailer_breakdown",
+        "Trailer / reveal breakdown",
+        "Pull out the most important reveals, details, and implications in a logical order. Clearly mark interpretation or speculation and avoid presenting theories as confirmed facts.",
+    ),
+    (
+        "ranking",
+        "Ranking / list",
+        "Create a punchy ranked or curated list. Give a distinct, specific reason for every choice and make the ranking criteria clear.",
+    ),
+    (
+        "explainer",
+        "Explainer / lore",
+        "Make the subject easy for fans to follow by clarifying the essential context, connections, and takeaway without turning the post into a dry encyclopedia summary.",
+    ),
+    (
+        "recommendation",
+        "Recommendation / what to play or watch",
+        "Recommend what to play or watch, explain exactly why, identify who it best suits, and mention any relevant caveat supported by the supplied information.",
+    ),
 ];
 
 /// What to plan from.
@@ -62,7 +162,11 @@ fn content(key: &str) -> (&'static str, &'static str, &'static str) {
 
 fn voice(brand: &Brand) -> String {
     let p = brand.personality.trim();
-    if p.is_empty() { String::new() } else { format!("\nBRAND PERSONALITY:\n{p}\nApply this voice to the actual post copy. Keep facts, schema, and source meaning intact.\n") }
+    if p.is_empty() {
+        String::new()
+    } else {
+        format!("\nBRAND PERSONALITY:\n{p}\nApply this voice to the actual post copy. Keep facts, schema, and source meaning intact.\n")
+    }
 }
 
 fn tone_block(tone: &str) -> String {
@@ -70,7 +174,9 @@ fn tone_block(tone: &str) -> String {
     if t.is_empty() {
         String::new()
     } else {
-        format!("\nTONE & PERSPECTIVE:\n- Take a {t} stance toward this topic.\n- Let that perspective shape the headline, the framing, and which points\n  you emphasise — while staying factual and true to the source story.\n")
+        format!(
+            "\nTONE & PERSPECTIVE:\n- Take a {t} stance toward this topic.\n- Let that perspective shape the headline, the framing, and which points\n  you emphasise — while staying factual and true to the source story.\n"
+        )
     }
 }
 
@@ -179,9 +285,15 @@ RULES:
 /// A single-card plan (square / story / x / quote).
 pub fn plan_single(ai: &Backend, brand: &Brand, req: &Request, fmt: &str) -> Result<Plan> {
     let note = match fmt {
-        "story" => "A vertical 1080x1920 Instagram/Facebook story. One headline, 1-2 short lines, and a 'cta' field with a 2-4 word tap action (e.g. 'DM us GROW').",
-        "x" => "A landscape 1600x900 image for X/Twitter. Headline + 2-3 short bullets. Also write 'tweet_text': the actual post text under 270 chars, with 1-2 hashtags inline.",
-        "quote" => "A 1080x1350 quote card. Put one memorable line (a real quote from the source, or the post's sharpest takeaway — never an invented quote attributed to a real person) in 'quote' and who said it (or the brand) in 'subhead'.",
+        "story" => {
+            "A vertical 1080x1920 Instagram/Facebook story. One headline, 1-2 short lines, and a 'cta' field with a 2-4 word tap action (e.g. 'DM us GROW')."
+        }
+        "x" => {
+            "A landscape 1600x900 image for X/Twitter. Headline + 2-3 short bullets. Also write 'tweet_text': the actual post text under 270 chars, with 1-2 hashtags inline."
+        }
+        "quote" => {
+            "A 1080x1350 quote card. Put one memorable line (a real quote from the source, or the post's sharpest takeaway — never an invented quote attributed to a real person) in 'quote' and who said it (or the brand) in 'subhead'."
+        }
         _ => "A single square (1080x1080) Instagram feed post. One bold headline plus 2-3 em-dash bullet points. Punchy and self-contained.",
     };
     let extra = match fmt {
@@ -248,7 +360,23 @@ fn finish(mut plan: Plan, brand: &Brand, story: &Story) -> Result<Plan> {
     Ok(plan)
 }
 
-const COPY_KEYS: &[&str] = &["headline", "subhead", "heading", "body", "caption", "cta", "tweet_text", "hook", "take", "points", "quote", "context", "source_label", "verdict", "banner"];
+const COPY_KEYS: &[&str] = &[
+    "headline",
+    "subhead",
+    "heading",
+    "body",
+    "caption",
+    "cta",
+    "tweet_text",
+    "hook",
+    "take",
+    "points",
+    "quote",
+    "context",
+    "source_label",
+    "verdict",
+    "banner",
+];
 
 /// Copy only text fields from `edited` into `base` (a rewrite may never change structure or facts
 /// such as hashtags, image queries or the slug).
@@ -270,7 +398,9 @@ pub fn merge_copy(base: &Value, edited: &Value) -> Value {
             }
             Value::Object(out)
         }
-        (Value::Array(b), Value::Array(e)) => Value::Array(b.iter().enumerate().map(|(i, o)| e.get(i).map_or_else(|| o.clone(), |n| merge_copy(o, n))).collect()),
+        (Value::Array(b), Value::Array(e)) => {
+            Value::Array(b.iter().enumerate().map(|(i, o)| e.get(i).map_or_else(|| o.clone(), |n| merge_copy(o, n))).collect())
+        }
         _ => base.clone(),
     }
 }
@@ -287,7 +417,13 @@ pub fn polish(ai: &Backend, brand: &Brand, story: &Story, plan: Plan, tone: &str
         brand.name
     );
     let base = plan.to_json();
-    let user = format!("Source story:\nTitle: {}\nSummary: {}\nURL: {}\n\nCurrent plan JSON:\n{}", story.title, photocraft_press::text::clip(&story.summary, 900), story.url, base);
+    let user = format!(
+        "Source story:\nTitle: {}\nSummary: {}\nURL: {}\n\nCurrent plan JSON:\n{}",
+        story.title,
+        photocraft_press::text::clip(&story.summary, 900),
+        story.url,
+        base
+    );
     match ai.chat_json(&system, &user) {
         Ok(edited) => Plan::from_json(&merge_copy(&base, &edited)).unwrap_or(plan),
         Err(e) => {
@@ -350,8 +486,12 @@ pub fn score(ai: &Backend, brand: &Brand, stories: Vec<Story>, cancel: &dyn Fn()
         if cancel() {
             break;
         }
-        let list: Vec<String> = chunk.iter().enumerate().map(|(i, s)| format!("[{i}] Title: {}\nSummary: {}", s.title, photocraft_press::text::clip(&s.summary, 400))).collect();
-        let system = format!("{}\n\nReturn ONLY valid JSON: {{\"results\": [{{\"index\": <int>, \"score\": <int 0-100>, \"reason\": \"<one sentence>\"}}]}}", score_system(brand));
+        let list: Vec<String> =
+            chunk.iter().enumerate().map(|(i, s)| format!("[{i}] Title: {}\nSummary: {}", s.title, photocraft_press::text::clip(&s.summary, 400))).collect();
+        let system = format!(
+            "{}\n\nReturn ONLY valid JSON: {{\"results\": [{{\"index\": <int>, \"score\": <int 0-100>, \"reason\": \"<one sentence>\"}}]}}",
+            score_system(brand)
+        );
         let user = format!("Score each story (indexed 0-{}):\n\n{}", chunk.len().saturating_sub(1), list.join("\n\n"));
         let reply = ai.chat_json(&system, &user)?;
         let results: Vec<Value> = match &reply {
