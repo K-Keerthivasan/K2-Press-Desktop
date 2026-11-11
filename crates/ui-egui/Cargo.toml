@@ -8,6 +8,7 @@ license.workspace = true
 workspace = true
 
 [dependencies]
+k2-format-gallery = {path = "../format-gallery", features = ["ui"]}
 craft-print = { workspace = true }
 craft-ui = { workspace = true }
 photocraft-geom = { workspace = true }

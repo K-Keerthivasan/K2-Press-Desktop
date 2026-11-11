@@ -216,6 +216,7 @@ fn formats(_s: &mut Session, _p: &Value) -> Result<Value> {
 
 pub fn specs() -> Vec<CommandSpec> {
     vec![
+        CommandSpec { id:"press.formatGallery",label:"Shared Format Gallery",menu:&[],shortcut:None,params:"list returns shared formats; save accepts format with account,series,name and revision (0 for new); apply accepts account,series,name,title,summary,creator,source and optional frame/output PNG",enabled:crate::commands::always,run:|_, p| k2_format_gallery::command(p).map_err(|e|bad("press.formatGallery",e)),journal:false },
         CommandSpec {
             id: "press.build",
             label: "Build Post",

@@ -401,6 +401,7 @@ pub fn panel(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
         .frame(egui::Frame::NONE.fill(t.chrome).inner_margin(egui::Margin::symmetric(10, 8)))
         .show(ui, |ui| {
             header(app, ui);
+            k2_format_gallery::gallery_button(ui);
             ui.separator();
             if app.press.home.is_none() || app.press.cfg.is_none() {
                 app.press.tab = Tab::Settings;

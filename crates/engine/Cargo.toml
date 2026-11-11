@@ -12,6 +12,7 @@ workspace = true
 corpus = []
 
 [dependencies]
+k2-format-gallery = {path = "../format-gallery"}
 photocraft-geom = { workspace = true }
 photocraft-color = { workspace = true }
 photocraft-cms = { workspace = true }
