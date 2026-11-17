@@ -21,6 +21,15 @@ impl Default for Theme {
     }
 }
 
+/// One service in a brand's services row.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct ServiceItem {
+    pub label: String,
+    /// Icon name (`house`, `leaf`, `sparkle`, `shield`, `star`, `check`…); resolved into `Brand::icons`.
+    pub icon: String,
+}
+
 /// One entry of a brand's Create-tab content types.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
@@ -65,6 +74,25 @@ pub struct Brand {
     pub scoring_guidance: String,
     pub tone: String,
     pub content_types: Vec<ContentType>,
+    /// `personal` (the owner's own brands, the default) or `client` (managed for a client).
+    pub kind: String,
+    /// For a client: the agency managing it (e.g. "K2 Digital Media").
+    pub client_of: String,
+    pub phone: String,
+    pub address: String,
+    /// The look its posts use: `classic`, `imageForward` or `service` (empty: from `image_forward`).
+    pub style: String,
+    /// A handwritten line drawn in a script face (e.g. "A Cleaner Home. A Happier You.").
+    pub script_tagline: String,
+    /// Font for `script_tagline`; empty = Segoe Script.
+    pub script_font: String,
+    /// The services row (icon + label) the Service look draws.
+    pub service_items: Vec<ServiceItem>,
+    /// The formats "Make all versions" renders for this brand (format keys).
+    pub platforms: Vec<String>,
+    /// Icon name → image path, resolved by the app (the contact footer uses `pin`, `phone`, `globe`).
+    #[serde(skip)]
+    pub icons: std::collections::BTreeMap<String, String>,
     /// Anything else in the block (feeds, video, templates…), kept so nothing is lost.
     #[serde(flatten)]
     pub extra: serde_json::Map<String, Value>,
@@ -80,6 +108,19 @@ impl Brand {
             b.name = key.to_string();
         }
         b
+    }
+
+    pub fn is_client(&self) -> bool {
+        self.kind.trim().eq_ignore_ascii_case("client")
+    }
+
+    pub fn script_font(&self) -> &str {
+        if self.script_font.trim().is_empty() { "Segoe Script" } else { self.script_font.trim() }
+    }
+
+    /// The image for icon `name`, if the app resolved one.
+    pub fn icon(&self, name: &str) -> Option<&str> {
+        self.icons.get(name).map(String::as_str).filter(|p| !p.is_empty())
     }
 
     pub fn font(&self) -> &str {

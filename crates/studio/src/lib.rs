@@ -24,9 +24,13 @@ pub mod cloud;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod config;
 #[cfg(not(target_arch = "wasm32"))]
+pub mod email;
+#[cfg(not(target_arch = "wasm32"))]
 pub mod feeds;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod home;
+#[cfg(not(target_arch = "wasm32"))]
+pub mod icons;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod images;
 #[cfg(not(target_arch = "wasm32"))]

@@ -192,3 +192,35 @@ fn csv_errors_are_errors() {
     let posts = to_posts(&h, &rows);
     assert_eq!(posts[0].notes, "some notes");
 }
+
+#[test]
+fn service_look_covers_every_format() {
+    let mut b = Brand::from_value(
+        "phoenix",
+        &json!({"name": "Phoenix Fine Touch", "kind": "client", "style": "service", "phone": "519-999-5000", "website": "phoenixfinetouch.ca",
+                "location": "London, Ontario", "script_tagline": "A Cleaner Home. A Happier You.",
+                "service_items": [{"label": "Deep Cleaning", "icon": "sparkle"}, {"label": "Eco-Friendly", "icon": "leaf"}]}),
+    );
+    b.icons.insert("sparkle".into(), "C:/i/sparkle.svg".into());
+    assert!(b.is_client());
+    assert_eq!(Style::for_brand(&b), Style::Service);
+    let p = plan();
+    for f in Format::ALL {
+        let s = slides(&p, &b, Some(f), None);
+        assert!(!s.is_empty(), "{f:?}");
+        assert_eq!((s[0].width, s[0].height), f.size(), "{f:?}");
+        let names: Vec<String> = s.iter().flat_map(|x| x.steps.iter()).filter_map(|st| match st {
+            Step::Cmd { params, .. } => params.get("name").and_then(|n| n.as_str()).map(str::to_string),
+            Step::Image { name, .. } => Some(name.clone()),
+        }).collect();
+        if f != Format::YoutubeBanner {
+            assert!(names.iter().any(|n| n == "Footer bar"), "{f:?}: {names:?}");
+        }
+    }
+    let portrait = slides(&p, &b, Some(Format::Portrait), None);
+    assert!(portrait[0].steps.iter().any(|st| matches!(st, Step::Image { path, .. } if path == "C:/i/sparkle.svg")), "service icon placed");
+    assert_eq!(crate::service::bullets("— a\n- b\n\n• c"), vec!["a", "b", "c"]);
+    assert_eq!(Format::from_key("youtube"), Format::YoutubeThumb);
+    assert!(Format::Facebook.landscape() && !Format::Story.landscape());
+    assert!(Format::Carousel.instagram() && !Format::Email.instagram());
+}

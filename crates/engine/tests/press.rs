@@ -139,3 +139,39 @@ fn preview() {
         }
     }
 }
+
+/// The Service look (Phoenix Fine Touch) in every format, to `PRESS_PREVIEW_DIR`:
+/// `PRESS_PREVIEW_DIR=… PRESS_HOME=… PRESS_PREVIEW_IMAGE=… cargo test -p photocraft-engine --test press preview_service -- --ignored`.
+#[test]
+#[ignore]
+fn preview_service() {
+    let (Ok(dir), Ok(home)) = (std::env::var("PRESS_PREVIEW_DIR"), std::env::var("PRESS_HOME")) else { return };
+    let img = std::env::var("PRESS_PREVIEW_IMAGE").unwrap_or_default();
+    let icons: serde_json::Map<String, Value> =
+        ["house", "leaf", "sparkle", "shield", "pin", "phone", "globe"].iter().map(|n| (n.to_string(), json!(format!("{home}/static/icons/{n}.svg")))).collect();
+    let brand = json!({
+        "name": "Phoenix Fine Touch", "handle": "@phoenixfinetouch", "kind": "client", "style": "service",
+        "tagline": "Cleaning Services London Ontario", "script_tagline": "A Cleaner Home. A Happier You.",
+        "category": "Breaking news", "location": "London, Ontario & Surrounding Areas", "phone": "519-999-5000",
+        "website": "phoenixfinetouch.ca", "address": "317 Adelaide St S Unit 113, London, ON N5Z 3L3",
+        "font": "Segoe UI Black", "logo_shape": "wide", "logo": format!("{home}/static/logo_phoenix.png"), "icons": icons,
+        "service_items": [{"label": "Deep Cleaning", "icon": "sparkle"}, {"label": "Eco-Friendly Solutions", "icon": "leaf"}, {"label": "Residential & Commercial", "icon": "house"}],
+        "theme": {"navy": "#F4F1EA", "navy2": "#FFFFFF", "accent": "#0B5557", "accent2": "#E4B039", "text": "#123E40"}
+    });
+    let plan = json!({
+        "slug": "weekend-stolen", "image": img, "headline": "Your weekend has been stolen!", "subhead": "The solution? Call in the professionals!",
+        "body": "— 2 hours scrubbing bathrooms\n— Endless household chores\n— A kitchen that never stays clean\n— Zero time to actually relax",
+        "title_card": {"headline": "Your weekend has been stolen!", "subhead": "The solution? Call in the professionals!"},
+        "content_slides": [{"heading": "Evidence found", "body": "— 2 hours scrubbing bathrooms\n— Endless household chores\n— A kitchen that never stays clean", "image": img}],
+        "outro_card": {"cta": "Get your weekends back"}, "caption": "c", "hashtags": ["PhoenixFineTouch"]
+    });
+    for f in ["carousel", "portrait", "square", "story", "facebook", "linkedin", "x", "youtube_thumb", "youtube_banner", "email", "pinterest"] {
+        let mut s = Session::new();
+        let r = s.execute("press.build", json!({"plan": plan, "brand": brand, "format": f})).unwrap();
+        for (i, d) in r["documents"].as_array().unwrap().iter().enumerate() {
+            eprintln!("{f} {}: {:?}", d["slide"], d["warnings"]);
+            s.set_active(i);
+            s.execute("file.saveACopy", json!({"path": format!("{dir}/svc_{f}_{}.png", d["slide"].as_str().unwrap())})).unwrap();
+        }
+    }
+}

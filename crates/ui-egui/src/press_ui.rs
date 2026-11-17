@@ -27,6 +27,10 @@ use photocraft_studio::planner::{self, Request};
 use photocraft_studio::{Story, cloud, feeds, images, meta, schedule};
 use serde_json::{Value, json};
 
+use craft::ui::buttons::IconButton;
+use craft::ui::contract::{Props as _, Show as _};
+use craft::ui::primitives::IconSpec;
+
 use crate::PhotocraftApp;
 use crate::theme::Tokens;
 
@@ -354,6 +358,56 @@ fn export_docs(app: &mut PhotocraftApp, plan: &Plan, brand: &str, docs: &[(DocId
     library::add_post(&home, brand, plan, &rel, &files).map_err(|e| e.0)
 }
 
+/// The formats "Make all versions" renders: the brand's `platforms`, else every platform once.
+pub(crate) fn version_formats(brand: Option<&photocraft_press::Brand>) -> Vec<Format> {
+    let keys: Vec<String> = brand.map(|b| b.platforms.clone()).unwrap_or_default();
+    let mut out: Vec<Format> = keys.iter().map(|k| Format::from_key(k)).collect();
+    if out.is_empty() {
+        out = vec![Format::Carousel, Format::Portrait, Format::Story, Format::Facebook, Format::Linkedin, Format::X, Format::YoutubeThumb, Format::Email];
+    }
+    out.dedup();
+    out
+}
+
+/// Render `plan` in every platform format into one folder (`outputs/<brand>/<date>_<slug>_versions/<format>/`),
+/// plus `email.html` around the email header. Returns the folder.
+pub(crate) fn render_versions(app: &mut PhotocraftApp, plan: &Plan, brand_key: &str) -> Result<std::path::PathBuf, String> {
+    let home = app.press.home.clone().ok_or("set the K2 Press folder first (Settings)")?;
+    let brand = app.press.cfg.as_ref().and_then(|c| c.brand(brand_key)).cloned().ok_or("pick a brand first")?;
+    let slug = if plan.slug.is_empty() { plan.title().to_string() } else { plan.slug.clone() };
+    let (_rel, dir) = library::new_output_dir(&home, brand_key, &slug, "versions").map_err(|e| e.0)?;
+    let mut done = Vec::new();
+    for fmt in version_formats(Some(&brand)) {
+        let mut p = plan.clone();
+        p.format = fmt.key().into();
+        if fmt != Format::Carousel && p.headline.trim().is_empty() {
+            p.headline = p.title_card.headline.clone();
+            if p.body.trim().is_empty() {
+                p.body = p.content_slides.iter().map(|s| format!("— {}", s.heading)).collect::<Vec<_>>().join("\n");
+            }
+        }
+        let (docs, _warnings) = build_docs(app, &p, brand_key, None)?;
+        let sub = dir.join(fmt.key());
+        let _ = std::fs::create_dir_all(&sub);
+        for (id, name) in &docs {
+            if let Some(i) = doc_index(app, *id) {
+                app.session.set_active(i);
+                let path = sub.join(format!("{name}.png")).to_string_lossy().replace('\\', "/");
+                app.session.execute("file.saveACopy", json!({"path": path})).map_err(|e| format!("{}: {e}", fmt.key()))?;
+            }
+        }
+        close_docs(app, &docs);
+        if fmt == Format::Email {
+            let header = docs.first().map(|(_, n)| format!("email/{n}.png")).unwrap_or_default();
+            let html = photocraft_studio::email::html(&p, &brand, &header);
+            std::fs::write(dir.join("email.html"), html).map_err(|e| e.to_string())?;
+        }
+        done.push(fmt.platform());
+    }
+    let _ = std::fs::write(dir.join("plan.json"), serde_json::to_string_pretty(&plan.to_json()).unwrap_or_default());
+    Ok(dir)
+}
+
 fn close_docs(app: &mut PhotocraftApp, docs: &[(DocId, String)]) {
     for (id, _) in docs {
         if let Some(i) = doc_index(app, *id) {
@@ -442,7 +496,7 @@ fn header(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
         });
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             // Settings sits beside the brand picker, so the tab bar fits on one line.
-            if crate::icons::button(ui, "settings", 26.0, app.press.tab == Tab::Settings, "Post Studio settings").clicked() {
+            if IconButton::new(IconSpec::svg(craft::behavior::IconId::new("settings"))).label("Settings").tooltip("Post Studio settings").show(ui).clicked() {
                 app.press.tab = Tab::Settings;
             }
             if let Some(cfg) = &app.press.cfg {
@@ -450,7 +504,8 @@ fn header(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
                 let mut pick = None;
                 egui::ComboBox::from_id_salt("press-brand").selected_text(current).width(150.0).show_ui(ui, |ui| {
                     for b in &cfg.brands {
-                        if ui.selectable_label(b.key == app.press.brand, &b.name).clicked() {
+                        let label = if b.is_client() { format!("{}  · client", b.name) } else { b.name.clone() };
+                        if ui.selectable_label(b.key == app.press.brand, label).clicked() {
                             pick = Some(b.key.clone());
                         }
                     }
@@ -532,7 +587,8 @@ fn hex_color(hex: &str) -> Option<Color32> {
 fn tab_button(ui: &mut egui::Ui, icon: &str, label: &str, selected: bool) -> egui::Response {
     let t = Tokens::get(ui.ctx());
     let fg = if selected { t.primary_text } else { t.text_dim };
-    let b = egui::Button::image_and_text(crate::icons::image(icon, 14.0, fg), RichText::new(label).color(fg))
+    let _ = icon;
+    let b = egui::Button::new(RichText::new(label).color(fg))
         .fill(if selected { t.primary_bg } else { Color32::TRANSPARENT })
         .stroke(egui::Stroke::NONE)
         .corner_radius(t.radius)
@@ -588,7 +644,9 @@ fn section(ui: &mut egui::Ui, title: &str) {
 
 /// The panel's main call to action.
 fn primary(ui: &mut egui::Ui, enabled: bool, label: &str) -> bool {
-    ui.add_enabled_ui(enabled, |ui| crate::widgets::primary_button(ui, label, 0.0).clicked()).inner
+    let t = Tokens::get(ui.ctx());
+    let b = egui::Button::new(RichText::new(label).strong().color(t.primary_text)).fill(t.primary_bg).corner_radius(t.radius).min_size(egui::vec2(0.0, 30.0));
+    ui.add_enabled(enabled, b).clicked()
 }
 
 fn combo(ui: &mut egui::Ui, id: &str, value: &mut String, options: &[(&str, &str)]) {
@@ -1110,21 +1168,11 @@ fn image_row(app: &mut PhotocraftApp, ui: &mut egui::Ui, slot: usize, query: &mu
             });
         }
         if ui.add_enabled(!app.press.busy(), egui::Button::new("File…").small()).clicked() {
-            let r = app.ask_file(
-                crate::file_dialog::FileDialogRequest::Open {
-                    multiple: false,
-                    initial_dir: None,
-                    extensions: Some(vec!["png".into(), "jpg".into(), "jpeg".into(), "webp".into()]),
-                },
-                move |app, a| {
-                    if let crate::file_dialog::FileDialogAnswer::Paths(p) = a
-                        && let Some(p) = p.first()
-                    {
-                        set_image(app, slot, p.replace('\\', "/"));
-                    }
-                    Ok(Value::Null)
-                },
-            );
+            // On the desktop the picked file's name is its full path.
+            let r = app.pick_file_bytes_filtered(&["png", "jpg", "jpeg", "webp"], move |app, name, _bytes| {
+                set_image(app, slot, name.replace('\\', "/"));
+                Ok(Value::Null)
+            });
             if let Err(e) = r
                 && e != "cancelled"
             {
@@ -1198,6 +1246,7 @@ fn post_tab(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
             ui.selectable_value(&mut app.press.style, None, "Brand look");
             ui.selectable_value(&mut app.press.style, Some(Style::Classic), "Classic");
             ui.selectable_value(&mut app.press.style, Some(Style::ImageForward), "Image-forward");
+            ui.selectable_value(&mut app.press.style, Some(Style::Service), "Service (local business)");
         });
     });
     let brand = app.press.brand.clone();
@@ -1234,6 +1283,21 @@ fn post_tab(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
         if ui.add_enabled(!app.press.built.is_empty(), egui::Button::new("Close slides")).clicked() {
             let old = std::mem::take(&mut app.press.built);
             close_docs(app, &old);
+        }
+        let n = version_formats(app.press.brand().as_ref()).len();
+        if ui
+            .add_enabled(!app.press.busy(), egui::Button::new(format!("Make all {n} versions")))
+            .on_hover_text("Instagram, Facebook, LinkedIn, X, YouTube, email… for this brand, into one folder (with email.html)")
+            .clicked()
+        {
+            match render_versions(app, &plan, &brand) {
+                Ok(dir) => {
+                    app.press.status = format!("All versions saved to {}", dir.display());
+                    let ctx = ui.ctx().clone();
+                    reveal(app, &ctx, &dir);
+                }
+                Err(e) => app.press.error = e,
+            }
         }
     });
     ui.add_space(6.0);

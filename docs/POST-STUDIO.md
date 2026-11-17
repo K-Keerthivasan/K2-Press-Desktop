@@ -77,6 +77,44 @@ Credentials: `CLOUD_SUPABASE_URL`, `CLOUD_SUPABASE_ANON_KEY`, `CLOUD_AUTH_EMAIL`
 Run `deno test` there, then apply the migration and deploy the three functions. Until then the
 cloud refuses image posts with a clear error.
 
+## Clients, looks and platforms
+
+Brands in `config.yaml` are **personal** (default: K2 Digital Media, JKR) or **clients**
+(`kind: client`, `client_of: K2 Digital Media`, e.g. Phoenix Fine Touch). Clients show as
+"· client" in the brand picker. Each brand picks its look with `style`:
+
+| Look | For | What it draws |
+|---|---|---|
+| `classic` | K2 Digital Media | dark panel, accent rule, logo lockup, faint photo |
+| `imageForward` | JKR | full-bleed photo, heavy uppercase type, accent bar |
+| `service` | local-business clients (Phoenix) | light room photo, wide logo, script tagline, kicker band, teal headline with gold underline, checklist card, services row, contact footer bar |
+
+Client fields: `phone`, `address`, `location`, `website`, `script_tagline`, `script_font`,
+`service_items` (`{label, icon}`; icons `house leaf sparkle shield star check broom spray calendar`,
+or your own `static/icons/<name>.png|svg`) and `platforms`.
+
+Every look renders every platform format: Instagram carousel, post (4:5), square, story / Reel
+cover, Facebook, LinkedIn, X, YouTube thumbnail, YouTube channel banner (text in the safe area),
+email header, Pinterest, quote card and brand cover. **Post ▸ Make all versions** renders the
+brand's `platforms` into `outputs/<brand>/<date>_<slug>_versions/<format>/`, plus `email.html`
+(a 600 px table newsletter around the email header, ready for Mailchimp or Gmail).
+
+## MCP (agents drive the app)
+
+The app opens its JSON control channel on `127.0.0.1:9877` with the token in
+`%APPDATA%\K2 Press Desktop\control.token` (skipped if the port is busy). The `k2-press` MCP
+server bridges to it:
+
+```json
+"k2-press": { "type": "stdio", "command": "%APPDATA%\K2 Press Desktop\tools\photocraft-cli.exe",
+  "args": ["mcp", "--bridge", "127.0.0.1:9877", "--control-token-file", "%APPDATA%\K2 Press Desktop\control.token"] }
+```
+
+It exposes every PhotoCraft command plus `press.build` (plan + brand → editable slide documents),
+`press.slides`, `press.formats`, `press.buildSpec` and `press.formatGallery`, and the UI tools
+(screenshot, click, inspect). Without the app running, `photocraft-cli mcp` runs the same
+commands headless.
+
 ## Publishing (direct, from this PC)
 
 Same rules as K2 Press's `meta.py`: Instagram needs `META_ACCESS_TOKEN` and `PUBLIC_BASE_URL` (an

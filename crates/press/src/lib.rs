@@ -12,9 +12,10 @@ pub mod brand;
 pub mod csv;
 pub mod layout;
 pub mod plan;
+pub mod service;
 pub mod text;
 
-pub use brand::{Brand, ContentType, Theme};
+pub use brand::{Brand, ContentType, ServiceItem, Theme};
 pub use layout::{Format, SlideKind, SlideSpec, Step, Style, slides};
 pub use plan::{ContentSlide, OutroCard, Plan, TitleCard};
 

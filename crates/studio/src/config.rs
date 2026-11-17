@@ -34,6 +34,7 @@ impl Config {
                         b.logo = Some(p.to_string_lossy().replace('\\', "/"));
                     }
                 }
+                crate::icons::resolve(home, &mut b);
                 brands.push(b);
             }
         }
@@ -59,6 +60,11 @@ impl Config {
         let mut v = serde_json::to_value(b).unwrap_or(Value::Null);
         if let (Some(o), Some(l)) = (v.as_object_mut(), &b.logo) {
             o.insert("logo".into(), Value::String(l.clone()));
+        }
+        if let Some(o) = v.as_object_mut()
+            && !b.icons.is_empty()
+        {
+            o.insert("icons".into(), serde_json::to_value(&b.icons).unwrap_or(Value::Null));
         }
         v
     }
