@@ -238,18 +238,25 @@ impl PhotocraftApp {
             .status(status_bar && !home, |ui, _cx, app| panels::status_bar(app, ui))
             .content(slots::STATUS, versions.1)
             .body(|ui, cx, app| {
-                if home {
-                    canvas::document_area(app, ui);
-                } else {
-                    // Shift+Tab hides the panels and keeps the tools: the toolbar is a panel of the dock.
-                    let panels_hidden = cx.shell().is_some_and(|shell| shell.panels_hidden());
-                    // K2 Press Desktop: Post Studio, left of the dock and canvas.
-                    #[cfg(not(target_arch = "wasm32"))]
-                    if app.ui.panels.post_studio && !panels_hidden {
-                        crate::press_ui::panel(app, ui);
-                    }
-                    crate::panel_docking::show(app, ui, panels_hidden);
+                // Shift+Tab hides the panels and keeps the tools: the toolbar is a panel of the dock.
+                let panels_hidden = cx.shell().is_some_and(|shell| shell.panels_hidden());
+                // K2 Press Desktop: Post Studio on the left (on Home too, where posts start); the dock,
+                // canvas or Home get exactly the rest of the body.
+                let full = ui.max_rect();
+                #[allow(unused_mut)]
+                let mut rest = full;
+                #[cfg(not(target_arch = "wasm32"))]
+                if app.ui.panels.post_studio && !panels_hidden {
+                    let edge = crate::press_ui::panel(app, ui);
+                    rest = egui::Rect::from_min_max(egui::pos2(edge.min(full.right()), full.top()), full.max);
                 }
+                ui.scope_builder(egui::UiBuilder::new().max_rect(rest), |ui| {
+                    if home {
+                        canvas::document_area(app, ui);
+                    } else {
+                        crate::panel_docking::show(app, ui, panels_hidden);
+                    }
+                });
                 notices::show(app, ui);
                 smart_svg_ui::host(app, &ui.ctx().clone());
             })

@@ -441,14 +441,15 @@ fn open_plan(app: &mut PhotocraftApp, mut plan: Plan) {
 
 // ── Panel ────────────────────────────────────────────────────────────────────
 
-pub fn panel(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
+/// Draws Post Studio at the left of `ui`; returns the x where the rest of the window starts.
+pub fn panel(app: &mut PhotocraftApp, ui: &mut egui::Ui) -> f32 {
     if !app.press.loaded {
         app.press.reload();
     }
     poll(app);
     scheduler_tick(app, ui.ctx());
     let t = Tokens::get(ui.ctx());
-    egui::Panel::left("post-studio")
+    let r = egui::Panel::left("post-studio")
         .resizable(true)
         .default_size(470.0)
         .min_size(340.0)
@@ -468,6 +469,7 @@ pub fn panel(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
                 Tab::Settings => settings_tab(app, ui),
             });
         });
+    r.response.rect.right()
 }
 
 fn header(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
