@@ -91,6 +91,15 @@ enum Source {
     Saved,
 }
 
+#[derive(Default)]
+struct ChannelDraft {
+    plan: Option<Plan>,
+    built: Vec<(DocId, String)>,
+    image_links: BTreeMap<usize, String>,
+    idea: String,
+    notes: String,
+}
+
 /// Everything the panel remembers between frames.
 pub struct State {
     loaded: bool,
@@ -99,6 +108,7 @@ pub struct State {
     cfg: Option<Config>,
     load_error: String,
     brand: String,
+    channel_drafts: HashMap<String, ChannelDraft>,
     tab: Tab,
     // Create
     source: Source,
@@ -155,6 +165,7 @@ impl Default for State {
             cfg: None,
             load_error: String::new(),
             brand: String::new(),
+            channel_drafts: HashMap::new(),
             tab: Tab::Create,
             source: Source::Idea,
             idea: String::new(),
@@ -225,6 +236,34 @@ impl State {
                 self.cfg = None;
             }
         }
+    }
+
+    fn switch_channel(&mut self, key: &str) -> bool {
+        if key == self.brand || self.busy() || self.cfg.as_ref().and_then(|c| c.brand(key)).is_none() {
+            return false;
+        }
+        let previous = ChannelDraft {
+            plan: self.plan.take(), built: std::mem::take(&mut self.built),
+            image_links: std::mem::take(&mut self.image_links),
+            idea: std::mem::take(&mut self.idea), notes: std::mem::take(&mut self.notes),
+        };
+        self.channel_drafts.insert(self.brand.clone(), previous);
+        let next = self.channel_drafts.remove(key).unwrap_or_default();
+        self.plan = next.plan;
+        self.built = next.built;
+        self.image_links = next.image_links;
+        self.idea = next.idea;
+        self.notes = next.notes;
+        if let Some(plan) = &self.plan { self.format = plan.format(); }
+        self.brand = key.to_owned();
+        self.settings.brand = key.to_owned();
+        self.stories.clear(); self.saved.clear(); self.picked.clear();
+        self.csv_posts.clear(); self.csv_name.clear(); self.angles.clear();
+        self.source = Source::Idea;
+        self.style = None;
+        self.status.clear(); self.error.clear(); self.confirm_publish = None;
+        self.tab = if self.plan.is_some() { Tab::Post } else { Tab::Create };
+        true
     }
 
     fn brand(&self) -> Option<photocraft_press::Brand> {
@@ -456,7 +495,8 @@ pub fn panel(app: &mut PhotocraftApp, ui: &mut egui::Ui) -> f32 {
         .frame(egui::Frame::NONE.fill(t.chrome).inner_margin(egui::Margin::symmetric(10, 8)))
         .show(ui, |ui| {
             header(app, ui);
-            k2_format_gallery::gallery_button(ui);
+            let gallery_account = app.press.brand().map(|b| b.name).unwrap_or_default();
+            k2_format_gallery::gallery_button(ui, &gallery_account);
             ui.separator();
             if app.press.home.is_none() || app.press.cfg.is_none() {
                 app.press.tab = Tab::Settings;
@@ -475,6 +515,23 @@ pub fn panel(app: &mut PhotocraftApp, ui: &mut egui::Ui) -> f32 {
 fn header(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
     let ctx = ui.ctx().clone();
     let t = Tokens::get(&ctx);
+    let in_clients = app.press.brand().is_some_and(|b| b.is_client());
+    let mut workspace_pick = None;
+    ui.horizontal(|ui| {
+        ui.label("Workspace");
+        for (client, label) in [(false, "My brands"), (true, "Clients")] {
+            let candidate = app.press.cfg.as_ref().and_then(|c| c.brands.iter().find(|b| b.is_client() == client)).map(|b| b.key.clone());
+            ui.add_enabled_ui(!app.press.busy() && candidate.is_some(), |ui| {
+                if ui.selectable_label(in_clients == client, label).clicked() && in_clients != client {
+                    workspace_pick = candidate;
+                }
+            });
+        }
+    });
+    if let Some(key) = workspace_pick {
+        if app.press.switch_channel(&key) { let _ = app.press.settings.save(); }
+    }
+    let in_clients = app.press.brand().is_some_and(|b| b.is_client());
     let brand = app.press.brand();
     let accent = brand.as_ref().and_then(|b| hex_color(&b.theme.accent)).unwrap_or(t.accent);
     ui.horizontal(|ui| {
@@ -505,19 +562,15 @@ fn header(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
                 let current = cfg.brand(&app.press.brand).map(|b| b.name.clone()).unwrap_or_else(|| "—".into());
                 let mut pick = None;
                 egui::ComboBox::from_id_salt("press-brand").selected_text(current).width(150.0).show_ui(ui, |ui| {
-                    for b in &cfg.brands {
+                    for b in cfg.brands.iter().filter(|b| b.is_client() == in_clients) {
                         let label = if b.is_client() { format!("{}  · client", b.name) } else { b.name.clone() };
-                        if ui.selectable_label(b.key == app.press.brand, label).clicked() {
+                        if ui.selectable_label(b.key == app.press.brand, label).clicked() && !app.press.busy() {
                             pick = Some(b.key.clone());
                         }
                     }
                 });
                 if let Some(k) = pick {
-                    app.press.brand = k.clone();
-                    app.press.settings.brand = k;
-                    let _ = app.press.settings.save();
-                    app.press.stories.clear();
-                    app.press.saved.clear();
+                    if app.press.switch_channel(&k) { let _ = app.press.settings.save(); }
                 }
             }
         });
@@ -528,7 +581,7 @@ fn header(app: &mut PhotocraftApp, ui: &mut egui::Ui) {
     ui.add_space(4.0);
     ui.horizontal_wrapped(|ui| {
         ui.spacing_mut().item_spacing.x = 4.0;
-        let pending = app.press.queue.iter().filter(|e| library::s(e, "status") == "pending").count();
+        let pending = app.press.queue.iter().filter(|e| library::s(e, "brand") == app.press.brand && library::s(e, "status") == "pending").count();
         let tabs = [
             (Tab::Create, "sparkles", "Create".to_string()),
             (Tab::Post, "image", if app.press.plan.is_some() { "Post •".to_string() } else { "Post".into() }),
@@ -2212,6 +2265,31 @@ mod tests {
 
     fn app() -> PhotocraftApp {
         PhotocraftApp::new(photocraft_engine::Session::new(), crate::Services::default())
+    }
+
+    #[test]
+    fn channel_switch_keeps_personal_and_client_drafts_separate() {
+        let mut state = State::default();
+        state.cfg = Some(Config { brands: vec![
+            photocraft_press::Brand::from_value("k2", &json!({"name":"K2 Digital Media"})),
+            photocraft_press::Brand::from_value("phoenix", &json!({"name":"Phoenix Fine Touch","kind":"client"})),
+            photocraft_press::Brand::from_value("other", &json!({"name":"Another client","kind":"client"})),
+        ], ..Default::default() });
+        state.brand = "k2".into();
+        state.idea = "K2 idea".into();
+        state.plan = Some(Plan { headline: "K2 draft".into(), ..Default::default() });
+        assert!(state.switch_channel("phoenix"));
+        assert!(state.plan.is_none());
+        assert!(state.idea.is_empty());
+        state.plan = Some(Plan { headline: "Phoenix draft".into(), ..Default::default() });
+        assert!(state.switch_channel("other"));
+        assert!(state.plan.is_none());
+        assert!(state.switch_channel("k2"));
+        assert_eq!(state.plan.as_ref().unwrap().headline, "K2 draft");
+        assert_eq!(state.idea, "K2 idea");
+        assert!(state.switch_channel("phoenix"));
+        assert_eq!(state.plan.as_ref().unwrap().headline, "Phoenix draft");
+        assert!(!state.switch_channel("missing"));
     }
 
     #[test]

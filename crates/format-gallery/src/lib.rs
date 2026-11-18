@@ -116,13 +116,55 @@ fn list(db: &Connection) -> Result<Vec<Format>> {
     let mut q = db.prepare("SELECT body FROM formats ORDER BY account,series,name").map_err(error)?;
     q.query_map([], |r| r.get::<_, String>(0)).map_err(error)?.map(|s| serde_json::from_str(&s.map_err(error)?).map_err(error)).collect()
 }
+fn list_for_account(db: &Connection, account: &str) -> Result<Vec<Format>> {
+    // Use an exact account match after trimming/case folding; never fuzzy-match another brand.
+    let account = account.trim();
+    if account.is_empty() {
+        return Ok(Vec::new());
+    }
+    Ok(list(db)?.into_iter().filter(|f| f.account.trim().eq_ignore_ascii_case(account)).collect())
+}
+/// Put a ready-made template (with example renders) into a channel's gallery, or refresh the
+/// examples, description and notes of one already there. The examples are copied into the shared
+/// gallery's assets; other channels' rows are never touched.
+pub fn seed_template(account: &str, series: &str, name: &str, description: &str, skills: &str, examples: &[String]) -> Result<Format> {
+    let db = open()?;
+    seed(&db, account, series, name, description, skills, examples)
+}
+fn seed(db: &Connection, account: &str, series: &str, name: &str, description: &str, skills: &str, examples: &[String]) -> Result<Format> {
+    let mut stored = Vec::new();
+    for e in examples.iter().take(64) {
+        stored.push(assets::store(e)?);
+    }
+    let existing: Option<String> = db
+        .query_row("SELECT body FROM formats WHERE account=?1 AND series=?2 AND name=?3", params![account, series, name], |r| r.get(0))
+        .optional()
+        .map_err(error)?;
+    let mut f = match existing {
+        Some(body) => serde_json::from_str::<Format>(&body).map_err(error)?,
+        None => Format { account: account.into(), series: series.into(), name: name.into(), revision: 0, ..Default::default() },
+    };
+    f.description = description.into();
+    f.skills = skills.into();
+    f.examples = stored;
+    f.reference = f.examples.first().cloned().unwrap_or_default();
+    f.examples.retain(|e| *e != f.reference);
+    save(db, f)
+}
 pub fn command(p: &Value) -> Result<Value> {
     let db = open()?;
     dispatch(&db, p, false)
 }
 fn dispatch(db: &Connection, p: &Value, desktop: bool) -> Result<Value> {
     match p["action"].as_str() {
-        Some("list") => serde_json::to_value(list(&db)?).map_err(error),
+        Some("list") => {
+            let rows = match p.get("account") {
+                None => list(db)?,
+                Some(Value::String(account)) => list_for_account(db, account)?,
+                Some(_) => return Err("account must be a string".into()),
+            };
+            serde_json::to_value(rows).map_err(error)
+        },
         Some("save") => {
             let f: Format = serde_json::from_value(p["format"].clone()).map_err(error)?;
             for a in [&f.logo, &f.graphic, &f.reference].into_iter().chain(f.examples.iter()) {
@@ -172,6 +214,34 @@ fn dispatch(db: &Connection, p: &Value, desktop: bool) -> Result<Value> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn channel_gallery_never_leaks_another_accounts_examples() {
+        let db = Connection::open_in_memory().unwrap();
+        initialize(&db).unwrap();
+        let phoenix = Format { account: "Phoenix Fine Touch".into(), series: "Holiday".into(), name: "Save the tax".into(), ..Default::default() };
+        save(&db, phoenix).unwrap();
+        save(&db, Format { account: "K2 Digital Media".into(), ..Default::default() }).unwrap();
+        assert_eq!(list_for_account(&db, " phoenix fine touch ").unwrap().len(), 1);
+        assert_eq!(list_for_account(&db, "JKR").unwrap().len(), 4);
+        assert_eq!(list_for_account(&db, "K2 Digital Media").unwrap().len(), 1);
+        assert!(list_for_account(&db, "New client").unwrap().is_empty());
+        assert!(list_for_account(&db, "").unwrap().is_empty());
+        let rows = dispatch(&db, &json!({"action":"list","account":"Phoenix Fine Touch"}), false).unwrap();
+        assert_eq!(rows.as_array().unwrap().len(), 1);
+        assert_eq!(rows[0]["account"], "Phoenix Fine Touch");
+        assert!(dispatch(&db, &json!({"action":"list","account":12}), false).is_err());
+    }
+    #[test]
+    fn seeding_creates_then_refreshes_one_channel_row() {
+        let db = Connection::open_in_memory().unwrap();
+        initialize(&db).unwrap();
+        let a = seed(&db, "Phoenix Fine Touch", "Service look", "Instagram post", "d1", "s1", &[]).unwrap();
+        assert_eq!(a.revision, 1);
+        let b = seed(&db, "Phoenix Fine Touch", "Service look", "Instagram post", "d2", "s2", &[]).unwrap();
+        assert_eq!((b.revision, b.description.as_str()), (2, "d2"));
+        assert_eq!(list_for_account(&db, "Phoenix Fine Touch").unwrap().len(), 1);
+        assert_eq!(list_for_account(&db, "JKR").unwrap().len(), 4);
+    }
     #[test]
     fn revisions_and_duplicate_names() {
         let db = Connection::open_in_memory().unwrap();

@@ -26,6 +26,39 @@ fn script(c: &Ctx, name: &str, text: &str, r: [f64; 4], size: f64, col: &str, al
     cmd("type.create", json!({"box": r, "text": text, "name": name, "font": c.brand.script_font(), "size": size.round(), "color": col, "align": align, "leading": (size * 1.15).round()}))
 }
 
+/// The handwritten tagline, sized to fit `r` in one line (two if it must), never clipped. With
+/// `backing`, a soft light pill sits behind it so it reads over a dark photo.
+fn tagline(c: &Ctx, s: &mut Vec<Step>, r: [f64; 4], max: f64, align: &str, backing: bool) {
+    let text = c.brand.script_tagline.trim();
+    if text.is_empty() {
+        return;
+    }
+    // Script faces run wide: about 0.6 em per character.
+    const K: f64 = 0.6;
+    let [x, y, w, h] = r;
+    let n = text.chars().count().max(1) as f64;
+    let mut lines = 1.0;
+    let mut size = max.min(w / (n * K));
+    if size < max * 0.72 {
+        lines = 2.0;
+        size = max.min(w / ((n / 2.0 + 3.0) * K));
+    }
+    size = size.min(h / (lines * 1.18)).max(10.0);
+    let per_line = if lines > 1.0 { n / 2.0 + 3.0 } else { n };
+    let tw = (per_line * K * size).min(w);
+    let th = lines * size * 1.18;
+    let bx = match align {
+        "right" => x + w - tw,
+        "center" => x + (w - tw) / 2.0,
+        _ => x,
+    };
+    if backing {
+        let pad = size * 0.45;
+        s.push(rounded("Tagline backing", [bx - pad, y - pad * 0.4, tw + 2.0 * pad, th + pad * 0.8], size * 0.5, json!(alpha(WHITE, 0.82))));
+    }
+    s.push(script(c, "Script tagline", text, [x, y, w, th + size * 0.3], size, &c.accent, align));
+}
+
 /// Heavy display text (the brand font, bold).
 fn display(c: &Ctx, name: &str, text: &str, r: [f64; 4], size: f64, col: &str, align: &str) -> Step {
     cmd("type.create", json!({"box": r, "text": text, "name": name, "font": c.font, "size": size.round(), "color": col, "align": align, "weight": 900, "leading": (size * 1.05).round()}))
@@ -174,15 +207,40 @@ fn footer(c: &Ctx, s: &mut Vec<Step>, f: &Frame, wide: bool) -> f64 {
     let y = f.h - fh;
     s.push(rect("Footer bar", [0.0, y, f.w, fh], json!(c.accent)));
     s.push(rect("Footer gold edge", [0.0, y, f.w, (5.0 * f.u).max(2.0)], json!(c.accent2)));
-    let col = f.w / items.len() as f64;
-    let size = (if wide { 26.0 } else { 30.0 }) * f.u;
+    // Columns sized to their text (a long location gets the room it needs); the type shrinks a
+    // little if everything cannot fit, and a location still too long drops its tail
+    // ("London, Ontario & Surrounding Areas" -> "London, Ontario").
+    let mut size = (if wide { 26.0 } else { 30.0 }) * f.u;
+    let fac = |icon: &str| if icon == "phone" { 0.66 } else { 0.56 };
+    let natural = |items: &[(&str, String)], size: f64| -> Vec<f64> {
+        items.iter().map(|(icon, text)| size * 1.25 + 14.0 * f.u + text.chars().count() as f64 * size * fac(icon) + 44.0 * f.u).collect()
+    };
+    let mut items = items;
+    let mut nat = natural(&items, size);
+    let mut total: f64 = nat.iter().sum();
+    if total > f.w {
+        size *= (f.w / total).max(0.82);
+        nat = natural(&items, size);
+        total = nat.iter().sum();
+    }
+    if total > f.w
+        && let Some(loc) = items.iter_mut().find(|(i, _)| *i == "pin")
+    {
+        let short = loc.1.split(" & ").next().unwrap_or(&loc.1).trim().to_string();
+        loc.1 = short;
+        nat = natural(&items, size);
+        total = nat.iter().sum();
+    }
+    let extra = ((f.w - total) / items.len() as f64).max(0.0);
+    let scale = if total > f.w { f.w / total } else { 1.0 };
+    let mut x0 = 0.0;
     for (i, (icon, text)) in items.iter().enumerate() {
-        let x0 = col * i as f64;
+        let col = nat[i] * scale + extra;
         if i > 0 {
             s.push(rect("Footer divider", [x0, y + fh * 0.24, (2.0 * f.u).max(1.0), fh * 0.52], json!(alpha(WHITE, 0.45))));
         }
         let is = size * 1.25;
-        let tw = (text.chars().count() as f64 * size * (if *icon == "phone" { 0.72 } else { 0.6 })).min(col - is - 30.0 * f.u);
+        let tw = (text.chars().count() as f64 * size * fac(icon)).min(col - is - 30.0 * f.u);
         let start = x0 + (col - is - 14.0 * f.u - tw).max(0.0) / 2.0;
         if let Some(p) = b.icon(icon)
             && let Some(img) = image(p, [start, y + (fh - is) / 2.0, is, is], Fit::Contain, &format!("{icon} icon"), 1.0, 0.0)
@@ -190,7 +248,8 @@ fn footer(c: &Ctx, s: &mut Vec<Step>, f: &Frame, wide: bool) -> f64 {
             s.push(img);
         }
         let bold = *icon == "phone";
-        s.push(text_box(c, "Contact", text, [start + is + 14.0 * f.u, y + (fh - size * 1.3) / 2.0, tw + 80.0 * f.u, size * 1.6], if bold { size * 1.15 } else { size }, WHITE, bold, "left"));
+        s.push(text_box(c, "Contact", text, [start + is + 14.0 * f.u, y + (fh - size * 1.3) / 2.0, tw + 40.0 * f.u, size * 1.6], if bold { size * 1.1 } else { size }, WHITE, bold, "left"));
+        x0 += col;
     }
     fh
 }
@@ -204,9 +263,7 @@ fn hero(c: &Ctx, fmt: Format, kicker: &str, head: &str, sub: &str, card_title: &
     let (m, u) = (f.m, f.u);
     let lh = 150.0 * u;
     logo(c, &mut s, [m, m, 430.0 * u, lh]);
-    if !c.brand.script_tagline.trim().is_empty() {
-        s.push(script(c, "Script tagline", c.brand.script_tagline.trim(), [f.w * 0.5, m + 4.0 * u, f.w * 0.5 - m, 130.0 * u], 44.0 * u, &c.accent, "right"));
-    }
+    tagline(c, &mut s, [f.w * 0.5, m + 10.0 * u, f.w * 0.5 - m, 120.0 * u], 44.0 * u, "right", !img.trim().is_empty());
     let footer_h = footer(c, &mut s, &f, false);
     let bottom = f.h - footer_h - m * 0.7;
     // Services sit just above the footer.
@@ -272,8 +329,11 @@ fn wide(c: &Ctx, fmt: Format, kicker: &str, head: &str, sub: &str, img: &str) ->
             s.push(display(c, "Sub line", &sub.to_uppercase(), [m, y + 12.0 * u, col - m, size * 2.6], size, &c.fg, "left"));
         }
     }
-    if !c.brand.script_tagline.trim().is_empty() && !img.trim().is_empty() {
-        s.push(script(c, "Script tagline", c.brand.script_tagline.trim(), [f.w * 0.58, m * 0.7, f.w * 0.42 - m, 160.0 * u], 52.0 * u, &c.accent, "right"));
+    let tx = m + 520.0 * u;
+    if col - tx > 200.0 * u {
+        tagline(c, &mut s, [tx, m + 30.0 * u, col - tx, lh - 40.0 * u], 52.0 * u, "left", false);
+    } else {
+        tagline(c, &mut s, [f.w * 0.58, m * 0.7, f.w * 0.42 - m, 140.0 * u], 52.0 * u, "right", true);
     }
     s
 }
@@ -292,9 +352,7 @@ fn banner(c: &Ctx, plan: &Plan) -> Vec<Step> {
     let tx = sx + 580.0;
     let tw = sw - 580.0;
     let head = [&plan.headline, &plan.title_card.headline].into_iter().find(|t| !t.trim().is_empty()).map_or(c.brand.pitch.as_str(), |t| t.trim());
-    if !c.brand.script_tagline.trim().is_empty() {
-        s.push(script(c, "Script tagline", c.brand.script_tagline.trim(), [tx, sy + 10.0, tw, 110.0], 64.0, &c.accent, "left"));
-    }
+    tagline(c, &mut s, [tx, sy + 20.0, tw, 100.0], 64.0, "left", false);
     let h = headline(c, &mut s, head, tx, sy + 130.0, tw, 2, 48.0, 92.0);
     let line = [c.brand.phone.as_str(), c.brand.website.as_str()].iter().filter(|t| !t.trim().is_empty()).copied().collect::<Vec<_>>().join("   ·   ");
     if !line.is_empty() {
@@ -314,10 +372,10 @@ fn outro(c: &Ctx, plan: &Plan, fmt: Format) -> Vec<Step> {
     logo(c, &mut s, [(f.w - lw) / 2.0, m * 1.4, lw, 220.0 * u]);
     let mut y = m * 1.4 + 260.0 * u;
     if !c.brand.script_tagline.trim().is_empty() {
-        s.push(script(c, "Script tagline", c.brand.script_tagline.trim(), [m, y, f.w - 2.0 * m, 110.0 * u], 54.0 * u, &c.accent, "center"));
+        tagline(c, &mut s, [m, y, f.w - 2.0 * m, 110.0 * u], 54.0 * u, "center", false);
         y += 120.0 * u;
     }
-    let cta = if plan.outro_card.cta.trim().is_empty() { "Book your clean today" } else { plan.outro_card.cta.trim() };
+    let cta = if plan.outro_card.cta.trim().is_empty() { "Request your free quote" } else { plan.outro_card.cta.trim() };
     let size = fit_size(&cta.to_uppercase(), f.w - 2.0 * m, 3, 50.0 * u, 96.0 * u, true);
     let hh = height_of(&cta.to_uppercase(), size, f.w - 2.0 * m, true, 1.06);
     s.push(display(c, "Call to action", &cta.to_uppercase(), [m, y, f.w - 2.0 * m, hh + size], size, &c.accent, "center"));

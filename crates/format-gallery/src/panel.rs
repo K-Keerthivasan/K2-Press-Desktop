@@ -23,40 +23,50 @@ fn pick(ui: &mut egui::Ui, label: &str, value: &mut String) {
         }
     });
 }
-fn refresh(e: &mut Editor) {
-    match open().and_then(|db| list(&db)) {
+fn refresh(e: &mut Editor, account: &str) {
+    match open().and_then(|db| list_for_account(&db, account)) {
         Ok(rows) => {
             e.items = rows;
-            e.loaded = true
+            e.loaded = true;
+            if !e.items.iter().any(|f| f.account == e.draft.account && f.series == e.draft.series && f.name == e.draft.name) {
+                e.draft = e.items.first().cloned().unwrap_or_else(|| Format {
+                    account: account.to_owned(), series: "General".into(), name: String::new(), ..Default::default()
+                });
+            }
         }
         Err(s) => e.message = s,
     }
 }
-pub fn gallery_button(ui: &mut egui::Ui) {
-    egui::CollapsingHeader::new("Shared format gallery").show(ui, |ui| {
-        egui::ScrollArea::vertical().id_salt("gallery-scroll").max_height(ui.available_height().clamp(120.0, 600.0)).show(ui, draw_editor);
+pub fn gallery_button(ui: &mut egui::Ui, account: &str) {
+    if account.trim().is_empty() {
+        ui.label("Choose a channel to see its template gallery.");
+        return;
+    }
+    // The account is part of every widget/state id: switching channels cannot retain another
+    // channel's selected format, examples, source frame or unsaved description.
+    ui.push_id(("channel-gallery", account), |ui| {
+        egui::CollapsingHeader::new("Channel template gallery").show(ui, |ui| {
+            egui::ScrollArea::vertical().id_salt("gallery-scroll").max_height(ui.available_height().clamp(120.0, 600.0)).show(ui, |ui| draw_editor(ui, account));
+        });
     });
 }
-fn draw_editor(ui: &mut egui::Ui) {
+fn draw_editor(ui: &mut egui::Ui, account: &str) {
     let key = ui.id().with("gallery-editor");
     let mut e = ui.data_mut(|d| d.get_temp::<Editor>(key)).unwrap_or_default();
     if !e.loaded {
-        refresh(&mut e);
-        if let Some(f) = e.items.first() {
-            e.draft = f.clone()
-        }
+        refresh(&mut e, account);
     }
     if ui.button("Refresh gallery").clicked() {
-        refresh(&mut e)
+        refresh(&mut e, account)
     }
-    egui::ComboBox::from_id_salt("formats").selected_text(format!("{} / {} / {}", e.draft.account, e.draft.series, e.draft.name)).show_ui(ui, |ui| {
+    egui::ComboBox::from_id_salt("formats").selected_text(if e.draft.name.is_empty() { "No saved templates yet".into() } else { format!("{} / {}", e.draft.series, e.draft.name) }).show_ui(ui, |ui| {
         for f in &e.items {
             if ui.selectable_label(false, format!("{} / {} / {}", f.account, f.series, f.name)).clicked() {
                 e.draft = f.clone()
             }
         }
     });
-    if ui.button("New business, series or variation").clicked() {
+    if ui.button("New template or variation").clicked() {
         e.draft.revision = 0;
         e.draft.name.clear()
     }
@@ -80,8 +90,9 @@ fn draw_editor(ui: &mut egui::Ui) {
         }
     }
     let fresh = e.draft.revision == 0;
+    ui.label(format!("Channel: {account}"));
     ui.add_enabled_ui(fresh, |ui| {
-        for (name, val) in [("Business or account", &mut e.draft.account), ("Series or work", &mut e.draft.series), ("Format name", &mut e.draft.name)] {
+        for (name, val) in [("Series or work", &mut e.draft.series), ("Format name", &mut e.draft.name)] {
             ui.label(name);
             ui.text_edit_singleline(val);
         }
@@ -114,7 +125,7 @@ fn draw_editor(ui: &mut egui::Ui) {
         }) {
             Ok(f) => {
                 e.draft = f;
-                refresh(&mut e);
+                refresh(&mut e, account);
                 e.message = "Format saved".into()
             }
             Err(s) => e.message = s,

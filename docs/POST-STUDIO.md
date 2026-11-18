@@ -99,6 +99,23 @@ email header, Pinterest, quote card and brand cover. **Post ▸ Make all version
 brand's `platforms` into `outputs/<brand>/<date>_<slug>_versions/<format>/`, plus `email.html`
 (a 600 px table newsletter around the email header, ready for Mailchimp or Gmail).
 
+### Channel template gallery
+
+Each channel (brand) has its own **Channel template gallery** in Post Studio, stored in the
+shared `%APPDATA%\K2 Shared Gallery` (also used by Shorts Factory; a channel only ever sees its
+own rows). It is seeded with one template per look and platform, with example renders:
+Phoenix Fine Touch › Service look, K2 Digital Media › Classic look, JKR › Image-forward look.
+Refresh them after a layout change:
+
+```powershell
+$env:PRESS_SEED_GALLERY=1; $env:PRESS_PREVIEW_DIR="<folder>"; $env:PRESS_HOME="E:\AI\K2_PostTool"
+cargo test -p photocraft-engine --test press preview -- --ignored
+```
+
+Phoenix copy comes from phoenixfinetouch.ca ("The fine touch. Every time.", "Cleaner spaces.
+Better everyday.", "Reflecting the best."). Its `personality` keeps AI copy polite and
+professional (no gimmicks or alarmist hooks).
+
 ## MCP (agents drive the app)
 
 The app opens its JSON control channel on `127.0.0.1:9877` with the token in

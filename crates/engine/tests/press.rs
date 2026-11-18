@@ -101,7 +101,7 @@ fn every_format_builds() {
     }
     let q = s.execute("press.slides", json!({"plan": plan(), "format": "story"})).unwrap();
     assert_eq!(q["slides"][0]["height"], 1920);
-    assert_eq!(s.execute("press.formats", json!({})).unwrap()["formats"].as_array().unwrap().len(), 6);
+    assert_eq!(s.execute("press.formats", json!({})).unwrap()["formats"].as_array().unwrap().len(), photocraft_press::Format::ALL.len());
 }
 
 /// Writes every format to `PRESS_PREVIEW_DIR` as PNGs for a visual check:
@@ -130,12 +130,16 @@ fn preview() {
         for f in ["carousel", "square", "story", "x", "quote", "cover"] {
             let mut s = Session::new();
             let r = s.execute("press.build", json!({"plan": p, "brand": b, "format": f, "style": style})).unwrap();
+            let mut outs = Vec::new();
             for (i, d) in r["documents"].as_array().unwrap().iter().enumerate() {
                 eprintln!("{style} {f} {}: {:?}", d["slide"], d["warnings"]);
                 s.set_active(i);
                 let out = format!("{dir}/{style}_{f}_{}.png", d["slide"].as_str().unwrap());
                 s.execute("file.saveACopy", json!({"path": out})).unwrap();
+                outs.push(out);
             }
+            let look = if style == "classic" { "Classic look" } else { "Image-forward look" };
+            seed_gallery(b["name"].as_str().unwrap(), look, f, &outs);
         }
     }
 }
@@ -151,27 +155,51 @@ fn preview_service() {
         ["house", "leaf", "sparkle", "shield", "pin", "phone", "globe"].iter().map(|n| (n.to_string(), json!(format!("{home}/static/icons/{n}.svg")))).collect();
     let brand = json!({
         "name": "Phoenix Fine Touch", "handle": "@phoenixfinetouch", "kind": "client", "style": "service",
-        "tagline": "Cleaning Services London Ontario", "script_tagline": "A Cleaner Home. A Happier You.",
-        "category": "Breaking news", "location": "London, Ontario & Surrounding Areas", "phone": "519-999-5000",
+        "tagline": "Cleaning Services London Ontario", "script_tagline": "The fine touch. Every time.",
+        "category": "Residential & Commercial Cleaning", "location": "London, Ontario & Surrounding Areas", "phone": "519-999-5000",
         "website": "phoenixfinetouch.ca", "address": "317 Adelaide St S Unit 113, London, ON N5Z 3L3",
         "font": "Segoe UI Black", "logo_shape": "wide", "logo": format!("{home}/static/logo_phoenix.png"), "icons": icons,
-        "service_items": [{"label": "Deep Cleaning", "icon": "sparkle"}, {"label": "Eco-Friendly Solutions", "icon": "leaf"}, {"label": "Residential & Commercial", "icon": "house"}],
+        "service_items": [{"label": "Top to Bottom Detailed Cleaning", "icon": "sparkle"}, {"label": "Organic & Eco-Friendly Options", "icon": "leaf"}, {"label": "Fully Insured & Bonded", "icon": "shield"}],
         "theme": {"navy": "#F4F1EA", "navy2": "#FFFFFF", "accent": "#0B5557", "accent2": "#E4B039", "text": "#123E40"}
     });
     let plan = json!({
-        "slug": "weekend-stolen", "image": img, "headline": "Your weekend has been stolen!", "subhead": "The solution? Call in the professionals!",
-        "body": "— 2 hours scrubbing bathrooms\n— Endless household chores\n— A kitchen that never stays clean\n— Zero time to actually relax",
-        "title_card": {"headline": "Your weekend has been stolen!", "subhead": "The solution? Call in the professionals!"},
-        "content_slides": [{"heading": "Evidence found", "body": "— 2 hours scrubbing bathrooms\n— Endless household chores\n— A kitchen that never stays clean", "image": img}],
-        "outro_card": {"cta": "Get your weekends back"}, "caption": "c", "hashtags": ["PhoenixFineTouch"]
+        "slug": "cleaner-spaces", "image": img, "headline": "Cleaner spaces. Better everyday.", "subhead": "A little more care. A lot more attention to detail.",
+        "body": "— Top to bottom detailed cleaning\n— Organic & eco-friendly options\n— Health, pet & children friendly\n— Fully insured & bonded",
+        "title_card": {"headline": "Cleaner spaces. Better everyday.", "subhead": "A little more care. A lot more attention to detail."},
+        "content_slides": [{"heading": "The details make the difference", "body": "— Top to bottom detailed cleaning\n— Organic & eco-friendly options\n— Health, pet & children friendly", "image": img}],
+        "outro_card": {"cta": "Request your free quote"}, "caption": "c", "hashtags": ["PhoenixFineTouch"]
     });
     for f in ["carousel", "portrait", "square", "story", "facebook", "linkedin", "x", "youtube_thumb", "youtube_banner", "email", "pinterest"] {
         let mut s = Session::new();
         let r = s.execute("press.build", json!({"plan": plan, "brand": brand, "format": f})).unwrap();
+        let mut outs = Vec::new();
         for (i, d) in r["documents"].as_array().unwrap().iter().enumerate() {
             eprintln!("{f} {}: {:?}", d["slide"], d["warnings"]);
             s.set_active(i);
-            s.execute("file.saveACopy", json!({"path": format!("{dir}/svc_{f}_{}.png", d["slide"].as_str().unwrap())})).unwrap();
+            let out = format!("{dir}/svc_{f}_{}.png", d["slide"].as_str().unwrap());
+            s.execute("file.saveACopy", json!({"path": out})).unwrap();
+            outs.push(out);
         }
+        seed_gallery("Phoenix Fine Touch", "Service look", f, &outs);
+    }
+}
+
+/// With `PRESS_SEED_GALLERY=1`, the renders become the channel's templates in the shared
+/// "Channel template gallery" (one row per look and platform, examples = these renders).
+fn seed_gallery(account: &str, look: &str, format: &str, examples: &[String]) {
+    if std::env::var("PRESS_SEED_GALLERY").is_err() {
+        return;
+    }
+    let fmt = photocraft_press::Format::from_key(format);
+    let (w, h) = fmt.size();
+    let description = "{title}\n\n{summary}\n\n{creator}";
+    let skills = format!(
+        "{} in the {look} ({w}×{h}). Build it from Post Studio: pick this channel, choose the {} format and the brand's look; every headline, band and photo is an editable layer. Keep copy polite and on-brand.",
+        fmt.platform(),
+        fmt.label()
+    );
+    match k2_format_gallery::seed_template(account, look, fmt.label(), description, &skills, examples) {
+        Ok(f) => eprintln!("gallery: {account} / {look} / {} rev {}", f.name, f.revision),
+        Err(e) => panic!("gallery seed {account} {format}: {e}"),
     }
 }
